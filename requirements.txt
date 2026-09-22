@@ -1,2 +1,5 @@
 cryptography
 pytest
+pillow
+gunicorn
+flask

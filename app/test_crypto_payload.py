@@ -1,4 +1,4 @@
-from crypto_payload import (
+from app.crypto_payload import (
     generate_keypair,
     hash_cover_object,
     build_payload,
