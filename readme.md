@@ -37,8 +37,12 @@ INF2005-ACW1/
 │   ├── routes.py         # Web routes
 │   ├── crypto_payload.py # Hashing, payload building, signing/verification
 │   ├── image_stego.py    # LSB embed/extract logic
+│   ├── attack_simulation.py # Automated security attack simulation
+│   ├── test_attack_simulation.py # Attack-simulation automated tests
 │   ├── static/
 │   └── templates/
+├── evidence/
+│   └── attack_results_<datetime>_SGT.json
 ├── Dockerfile
 ├── docker-compose.yml
 ├── nginx/
@@ -79,3 +83,36 @@ Handles payload construction, hashing, signing, and signature verification.
 
 **Run standalone demo:**
     python crypto_payload.py
+
+## Attack Simulation Module (`app/attack_simulation.py`)
+
+Runs automated attacks against the crypto/payload module and records the expected and actual verification results.
+
+**Current scenarios:**
+
+- Valid payload baseline
+- Payload corruption
+- Wrong public key
+- Corrupted signature
+- Replay attempt
+- Signed-payload substitution
+
+**Run automated tests:**
+
+```bash
+docker compose run --rm web pytest -q app/test_attack_simulation.py
+```
+
+**Run attack simulation:**
+
+```bash
+docker compose run --rm web python -m app.attack_simulation
+```
+
+The command displays each scenario’s verification result and creates a new evidence file:
+
+```text
+evidence/attack_results_YYYYMMDD_HHMMSS_microseconds_SGT.json
+```
+
+Each JSON report contains the Singapore generation time, test summary, expected and actual results, attack-detection status, and an explanation of each scenario.
