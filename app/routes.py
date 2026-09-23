@@ -200,7 +200,7 @@ def embed():
 @bp.route('/verify', methods=['POST'])
 def verify():
     file = request.files.get('stego_image')
-
+    
     try:
         bits = int(request.form.get('bits_per_channel', 1))
     except (TypeError, ValueError):
@@ -211,11 +211,25 @@ def verify():
 
     if not file or file.filename == '':
         return "No file selected", 400
+    
+    if not file.filename.lower().endswith('.png'):
+        return "Only PNG files are supported", 400
 
     # Save under its own name so this is a genuinely independent upload,
     # not just re-reading the file /embed already wrote.
     verify_path = os.path.join(UPLOAD_FOLDER, f"verify_{file.filename}")
     file.save(verify_path)
+
+    # Validate that the uploaded file is a readable PNG.
+    try:
+        img = Image.open(verify_path)
+        img.verify()
+    except Exception:
+        return render_template(
+            'image_stego.html',
+            error="Invalid or corrupted PNG image",
+            bits=bits,
+        ), 400
 
     verdict, payload = run_verification(
         stego_path=verify_path,
