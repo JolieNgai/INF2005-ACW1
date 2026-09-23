@@ -64,3 +64,18 @@ See `requirements.txt`. Key packages: Flask, gunicorn, cryptography, Pillow.
 ## Known Limitations
 (to be filled in as development progresses — e.g. LSB fragility to compression/resaving,
 lossless PNG requirement, capacity ceiling per image size)
+
+
+## Crypto/Payload Module (app/crypto_payload.py)
+
+Handles payload construction, hashing, signing, and signature verification.
+
+**Functions:**
+- `generate_keypair()` → (private_key, public_key)
+- `hash_cover_object(data: bytes)` → SHA-256 hash of cover object bytes
+- `build_payload(media_id: str, cover_hash: bytes, metadata: dict)` → payload dict (media_id, timestamp, hash, nonce, metadata)
+- `sign_payload(private_key, payload: dict)` → signature (bytes), RSA-PSS + SHA-256
+- `verify_payload(public_key, payload: dict, signature: bytes)` → True/False
+
+**Run standalone demo:**
+    python crypto_payload.py
