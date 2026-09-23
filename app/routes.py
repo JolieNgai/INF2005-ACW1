@@ -116,40 +116,77 @@ def get_upload(filename):
 @bp.route('/embed', methods=['POST'])
 def embed():
     file = request.files.get('cover_image')
-    bits = int(request.form.get('bits_per_channel', 1))
+
+    try:
+        bits = int(request.form.get('bits_per_channel', 1))
+    except (TypeError, ValueError):
+        return "Invalid bits per channel value", 400
+
+    if bits < 1 or bits > 8:
+        return "Bits per channel must be between 1 and 8", 400
 
     if not file or file.filename == '':
         return "No file selected", 400
+
     if not file.filename.lower().endswith('.png'):
         return "Only PNG files are supported", 400
 
     cover_path = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(cover_path)
 
-    img = Image.open(cover_path).convert("RGB")
+    try:
+        img = Image.open(cover_path)
+        img.verify()
+
+        # Re-open after verify()
+        img = Image.open(cover_path).convert("RGB")
+
+    except Exception:
+        return render_template(
+            'image_stego.html',
+            error="Invalid or corrupted PNG image",
+            bits=bits,
+        ), 400
+
     width, height = img.size
 
-    # Hash a "stable representation" — bottom N bits masked off — so that
-    # embedding itself (which touches exactly those bits) doesn't break
-    # verification later. Any OTHER change to the image will still show up.
+    # Hash a "stable representation" — bottom N bits masked off —
+    # so that embedding itself doesn't break verification later.
     cover_hash = stable_hash(img.tobytes(), bits)
 
     payload = build_payload(
         media_id=file.filename,
         cover_hash=cover_hash,
-        metadata={"team": "P6-7", "bits_per_channel": bits},
+        metadata={
+            "team": "P6-7",
+            "bits_per_channel": bits
+        },
     )
+
     signature = sign_payload(PRIVATE_KEY, payload)
     data_to_embed = pack_payload(payload, signature)
 
-    fits, msg = check_capacity(width, height, 3, len(data_to_embed), bits)
+    fits, msg = check_capacity(
+        width,
+        height,
+        3,
+        len(data_to_embed),
+        bits
+    )
+
     if not fits:
         return f"Capacity error: {msg}", 400
 
     stego_filename = f"stego_{file.filename}"
     stego_path = os.path.join(UPLOAD_FOLDER, stego_filename)
 
-    embed_payload(cover_path, stego_path, data_to_embed, SECRET_KEY_PHRASE, bits_per_channel=bits)
+    embed_payload(
+        cover_path,
+        stego_path,
+        data_to_embed,
+        SECRET_KEY_PHRASE,
+        bits_per_channel=bits
+    )
 
     return render_template(
         'image_stego.html',
@@ -163,7 +200,14 @@ def embed():
 @bp.route('/verify', methods=['POST'])
 def verify():
     file = request.files.get('stego_image')
-    bits = int(request.form.get('bits_per_channel', 1))
+
+    try:
+        bits = int(request.form.get('bits_per_channel', 1))
+    except (TypeError, ValueError):
+        return "Invalid bits per channel value", 400
+
+    if bits < 1 or bits > 8:
+        return "Bits per channel must be between 1 and 8", 400
 
     if not file or file.filename == '':
         return "No file selected", 400

@@ -164,37 +164,3 @@ def extract_payload(image_path: str, key: str, bits_per_channel: int = 1) -> byt
         payload_bytes.append(int(byte_chunk, 2))
 
     return bytes(payload_bytes)
-
-
-
-#Quick test (run: python image_stego.py) for now, dont commit the generated png files please!
-
-if __name__ == "__main__":
-    # Create a small dummy cover image for testing
-    test_img = Image.new("RGB", (50, 50), color=(120, 130, 140))
-    test_img.save("test_cover.png")
-
-    secret_message = b"Hello from INF2005 image stego test!"
-    secret_key = "team-6-7-secret-key"
-
-    print("Capacity check:", check_capacity(50, 50, 3, len(secret_message), bits_per_channel=1))
-
-    embed_payload("test_cover.png", "test_stego.png", secret_message, secret_key, bits_per_channel=1)
-    print("Embedded ->", "test_stego.png")
-
-    recovered = extract_payload("test_stego.png", secret_key, bits_per_channel=1)
-    print("Recovered:", recovered)
-    print("Match:", recovered == secret_message)
-
-    #tamper test
-    tampered = Image.open("test_stego.png").convert("RGB")
-    pixels = bytearray(tampered.tobytes())
-    pixels[0] = pixels[0] ^ 0xFF  #flip a byte outside the payload's likely region
-    Image.frombytes("RGB", tampered.size, bytes(pixels)).save("test_stego_tampered.png")
-
-    try:
-        recovered_tampered = extract_payload("test_stego_tampered.png", secret_key, bits_per_channel=1)
-        print("Tampered extraction result:", recovered_tampered)
-        print("Still matches original?:", recovered_tampered == secret_message)
-    except Exception as e:
-        print("Tampered extraction failed as expected:", e)

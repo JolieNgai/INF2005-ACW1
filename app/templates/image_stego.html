@@ -48,7 +48,9 @@
         </label>
         <button type="submit">Extract & Verify</button>
     </form>
-
+    {% if error %}
+        <p>{{ error }}</p>
+    {% endif %}
     {% if verdict %}
     <h3>Verdict: {{ verdict }}</h3>
     {% if extracted_payload %}
