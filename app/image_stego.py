@@ -138,6 +138,17 @@ def extract_payload(image_path: str, key: str, bits_per_channel: int = 1) -> byt
 
     #read the payload itself
     payload_bits_needed = payload_length * 8
+
+ # Sanity check: if the decoded length is bigger than the image could
+    # possibly hold, the header was misread (wrong key/bits/corrupted file)
+    # — fail fast instead of looping for a huge number of pixel reads.
+    max_possible_bits = total_channels * bits_per_channel
+    if header_bits_needed + payload_bits_needed > max_possible_bits:
+        raise ValueError(
+            f"Decoded payload length ({payload_length} bytes) exceeds image "
+            f"capacity — likely wrong key or bits_per_channel."
+        )
+
     bits = []
     while len(bits) * bits_per_channel < header_bits_needed + payload_bits_needed:
         idx = channel_index % total_channels
@@ -164,7 +175,7 @@ if __name__ == "__main__":
     test_img.save("test_cover.png")
 
     secret_message = b"Hello from INF2005 image stego test!"
-    secret_key = "team-p1-4-secret-key"
+    secret_key = "team-6-7-secret-key"
 
     print("Capacity check:", check_capacity(50, 50, 3, len(secret_message), bits_per_channel=1))
 

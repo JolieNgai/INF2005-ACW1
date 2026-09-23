@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head><title>Image Stego</title></head>
+<body>
+    <h1>INF2005 Image Steganography</h1>
+
+    <h2>Embed</h2>
+    <form action="/embed" method="post" enctype="multipart/form-data">
+        <input type="file" name="cover_image" accept=".png" required>
+        <label>LSBs (1-8):
+            <select name="bits_per_channel">
+                {% for i in range(1, 9) %}
+                <option value="{{ i }}">{{ i }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button type="submit">Embed</button>
+    </form>
+
+    {% if stego_filename and cover_filename %}
+    <h3>Embed Result</h3>
+    <p>{{ capacity_msg }}</p>
+    <div style="display:flex; gap:20px;">
+        <div>
+            <p>Cover</p>
+            <img src="/uploads/{{ cover_filename }}" width="200">
+        </div>
+        <div>
+            <p>Stego</p>
+            <img src="/uploads/{{ stego_filename }}" width="200">
+        </div>
+    </div>
+    <p><a href="/uploads/{{ stego_filename }}" download>Download stego image</a></p>
+    <p>Embedded at {{ bits }} bit(s) per channel — download this file, then upload it below to verify it independently.</p>
+    {% endif %}
+
+    <hr>
+
+    <h2>Verify</h2>
+    <form action="/verify" method="post" enctype="multipart/form-data">
+        <input type="file" name="stego_image" accept=".png" required>
+        <label>LSBs used when embedding (1-8):
+            <select name="bits_per_channel">
+                {% for i in range(1, 9) %}
+                <option value="{{ i }}">{{ i }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button type="submit">Extract & Verify</button>
+    </form>
+
+    {% if verdict %}
+    <h3>Verdict: {{ verdict }}</h3>
+    {% if extracted_payload %}
+    <p>Extracted payload:</p>
+    <pre>{{ extracted_payload }}</pre>
+    {% endif %}
+    {% endif %}
+
+</body>
+</html>
