@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>INF2005 Image Steganography</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+<div class="container">
+
+    <header class="page-header">
+        <h1>INF2005 Image Steganography</h1>
+        <p>Embed and verify data inside PNG images using LSB steganography.</p>
+    </header>
+
+    {% if error %}
+    <div class="message error">
+        <strong>Error:</strong> {{ error }}
+    </div>
+    {% endif %}
+
+    <section class="card">
+        <h2>Embed Payload</h2>
+        <p class="description">
+            Upload a PNG image and choose the number of LSBs to use.
+        </p>
+
+        <form action="/embed" method="post" enctype="multipart/form-data">
+
+            <label for="cover_image">Cover Image</label>
+            <input
+                type="file"
+                id="cover_image"
+                name="cover_image"
+                accept=".png"
+                required
+            >
+
+            <label for="embed_bits">LSBs per channel</label>
+            <select id="embed_bits" name="bits_per_channel">
+                {% for i in range(1, 9) %}
+                <option value="{{ i }}">{{ i }} bit(s)</option>
+                {% endfor %}
+            </select>
+
+            <button type="submit">Embed Payload</button>
+        </form>
+
+        {% if stego_filename and cover_filename %}
+        <div class="result">
+
+            <h3>Embed Result</h3>
+
+            <p class="info">{{ capacity_msg }}</p>
+
+            <div class="image-comparison">
+
+                <div>
+                    <h4>Cover</h4>
+                    <img
+                        src="/uploads/{{ cover_filename }}"
+                        alt="Original cover image"
+                    >
+                </div>
+
+                <div>
+                    <h4>Stego</h4>
+                    <img
+                        src="/uploads/{{ stego_filename }}"
+                        alt="Stego image"
+                    >
+                </div>
+
+            </div>
+
+            <a
+                class="download-link"
+                href="/uploads/{{ stego_filename }}"
+                download
+            >
+                Download Stego Image
+            </a>
+
+            <p class="note">
+                Embedded using {{ bits }} bit(s) per channel.
+                Upload the downloaded stego image below to verify it independently.
+            </p>
+
+        </div>
+        {% endif %}
+    </section>
+
+
+    <section class="card">
+        <h2>Verify Stego Image</h2>
+
+        <p class="description">
+            Upload a stego PNG to extract and verify its embedded payload.
+        </p>
+
+        <form action="/verify" method="post" enctype="multipart/form-data">
+
+            <label for="stego_image">Stego Image</label>
+            <input
+                type="file"
+                id="stego_image"
+                name="stego_image"
+                accept=".png"
+                required
+            >
+
+            <label for="verify_bits">LSBs used when embedding</label>
+            <select id="verify_bits" name="bits_per_channel">
+                {% for i in range(1, 9) %}
+                <option value="{{ i }}">{{ i }} bit(s)</option>
+                {% endfor %}
+            </select>
+
+            <button type="submit">Extract & Verify</button>
+
+        </form>
+
+        {% if verdict %}
+        <div class="verdict">
+            <h3>Verification Result</h3>
+            <p><strong>Verdict:</strong> {{ verdict }}</p>
+
+            {% if extracted_payload %}
+            <h4>Extracted Payload</h4>
+            <pre>{{ extracted_payload }}</pre>
+            {% endif %}
+        </div>
+        {% endif %}
+
+    </section>
+
+</div>
+
+</body>
+</html>

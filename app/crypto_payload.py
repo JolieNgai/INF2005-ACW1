@@ -61,6 +61,43 @@ def verify_payload(public_key, payload: dict, signature: bytes) -> bool:
     except Exception:
         return False
 
+def stable_hash(pixel_bytes: bytes, bits_per_channel: int) -> bytes:
+    """
+    SHA-256 of the image with the bottom `bits_per_channel` bits of every
+    channel zeroed out. Invariant to legitimate LSB embedding at that same
+    bit-depth, but changes if anything else about the image is altered.
+    """
+    mask = (~((1 << bits_per_channel) - 1)) & 0xFF
+    masked = bytes(b & mask for b in pixel_bytes)
+    return hashlib.sha256(masked).digest()
+
+
+def run_verification(stego_path, key, bits, public_key, unpack_payload_fn, extract_payload_fn):
+    """
+    Pure function: given a stego file path, returns (verdict, payload_dict_or_None).
+    No Flask/HTTP dependency, so this can be unit-tested or reused by a CLI/tamper test.
+    """
+    from PIL import Image
+
+    try:
+        img = Image.open(stego_path).convert("RGB")
+        extracted_bytes = extract_payload_fn(stego_path, key, bits_per_channel=bits)
+    except Exception:
+        return "Cannot Verify", None
+
+    try:
+        payload, signature = unpack_payload_fn(extracted_bytes)
+    except Exception:
+        return "Payload Missing", None
+
+    if not verify_payload(public_key, payload, signature):
+        return "Signature Invalid", None
+
+    recomputed_hash = stable_hash(img.tobytes(), bits).hex()
+    if recomputed_hash != payload["hash"]:
+        return "Tampered", payload
+
+    return "Authentic", payload
 
 if __name__ == "__main__":
     priv, pub = generate_keypair()
@@ -81,7 +118,7 @@ if __name__ == "__main__":
     # --- Case 1: Positive verification (before tampering) ---
     cover_bytes = b"dummy cover object data"
     h = hash_cover_object(cover_bytes)
-    payload = build_payload("IMG001", h, {"team": "P1-4"})
+    payload = build_payload("IMG001", h, {"team": "P6-7"})
     sig = sign_payload(priv, payload)
 
     print("=== BEFORE tampering ===")
