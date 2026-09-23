@@ -1,12 +1,12 @@
 import os
 import json
-from flask import Blueprint, request, render_template, redirect, url_for, send_from_directory
+from flask import Blueprint, request, render_template, send_from_directory
 from PIL import Image
 from dotenv import load_dotenv
 
 from .crypto_payload import (
-    generate_keypair, hash_cover_object, stable_hash, build_payload,
-    sign_payload, verify_payload, run_verification
+    generate_keypair, stable_hash, build_payload,
+    sign_payload, run_verification
 )
 from .image_stego import check_capacity, embed_payload, extract_payload
 
