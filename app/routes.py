@@ -138,7 +138,7 @@ def embed():
     width, height = img.size
     cover_hash = stable_hash(img.tobytes(), bits)
     payload = build_payload(media_id=file.filename, cover_hash=cover_hash,
-                             metadata={"team": "P1-4", "bits_per_channel": bits})
+                             metadata={"team": "P6-7", "bits_per_channel": bits})
     signature = sign_payload(PRIVATE_KEY, payload)
     data_to_embed = pack_payload(payload, signature)
 

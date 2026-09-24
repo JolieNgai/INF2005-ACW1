@@ -132,7 +132,7 @@ if __name__ == "__main__":
     print("Verify:", verify_payload(pub, payload, sig))  # False
 
     # --- Case 3: Corrupted signature (payload untouched) ---
-    fresh_payload = build_payload("IMG002", h, {"team": "P1-4"})
+    fresh_payload = build_payload("IMG002", h, {"team": "P6-7"})
     fresh_sig = sign_payload(priv, fresh_payload)
     corrupted_sig = fresh_sig[:-1] + bytes([fresh_sig[-1] ^ 0xFF])  # flip last byte
     print("=== Verify (corrupted signature) ===")
