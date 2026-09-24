@@ -19,12 +19,18 @@ payload and checking its digital signature against tampering.
    cd INF2005-ACW1
    ```
 
-2. Build and start the stack (Flask + gunicorn + nginx):
+2. Create a `.env` file in the project root:
+   ```
+   STEGO_SECRET_KEY=<key>
+   ```
+   The app will not start without this
+
+3. Build and start the stack (Flask + gunicorn + nginx):
    ```
    docker compose up --build
    ```
 
-3. Open the app:
+4. Open the app:
    ```
    http://localhost:8080
    ```
@@ -33,12 +39,14 @@ payload and checking its digital signature against tampering.
 ```
 INF2005-ACW1/
 ├── app/
-│   ├── __init__.py       # Flask app factory
-│   ├── routes.py         # Web routes
-│   ├── crypto_payload.py # Hashing, payload building, signing/verification
-│   ├── image_stego.py    # LSB embed/extract logic
-│   ├── attack_simulation.py # Automated security attack simulation
-│   ├── test_attack_simulation.py # Attack-simulation automated tests
+│   ├── __init__.py                 # Flask app factory
+│   ├── routes.py                   # Web routes, orchestration, error handling
+│   ├── crypto_payload.py           # Hashing, payload building, signing/verification
+│   ├── image_stego.py              # LSB embed/extract logic
+│   ├── attack_simulation.py        # Automated security attack simulation
+│   ├── test_attack_simulation.py   # Attack-simulation automated tests
+│   ├── verdict.py                  # Shared verdict vocabulary, error-to-verdict mapping
+│   ├── validation.py               # Shared upload/input validation helpers
 │   ├── static/
 │   └── templates/
 ├── evidence/
@@ -52,7 +60,7 @@ INF2005-ACW1/
 ```
 
 ## Dependencies
-See `requirements.txt`. Key packages: Flask, gunicorn, cryptography, Pillow.
+See `requirements.txt`. Key packages: Flask, gunicorn, cryptography, Pillow, python-dotenv.
 
 ## Usage
 1. Upload a PNG cover image.
@@ -83,6 +91,23 @@ Handles payload construction, hashing, signing, and signature verification.
 
 **Run standalone demo:**
     python crypto_payload.py
+
+## Orchestration & Error Handling (app/verdict.py, app/routes.py)
+
+- `Verdict` enum defines the six verdict categories from FR10, used as the shared
+  vocabulary across modules:
+  - `Authentic` — signature valid, hash matches
+  - `Tampered` — signature valid, hash mismatch
+  - `Signature Invalid` — signature check fails
+  - `Payload Missing` — no payload could be extracted
+  - `Wrong Start Location` — extraction at the derived offset yields no valid payload
+  - `Cannot Verify` — unsupported file, missing dependency module, or unexpected error
+- `verdict_from_exception(exc)` maps unexpected exceptions (including calls to
+  not-yet-implemented modules) to `Cannot Verify` with an explanation, instead of
+  leaking a raw stack trace to the user.
+- A blueprint-level error handler in `routes.py` catches any unhandled exception raised
+  inside a route and renders it via `home.html` with a clear error message, so the app
+  stays usable instead of showing a raw traceback.
 
 ## Attack Simulation Module (`app/attack_simulation.py`)
 
