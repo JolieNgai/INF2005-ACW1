@@ -1,0 +1,190 @@
+import io
+import math
+import wave
+
+import pytest
+
+from app import create_app
+from app.audio_stego import capacity, embed, extract, read_wav, tamper, write_wav
+from app.crypto_payload import generate_keypair
+
+
+def cover(width=2, channels=1, samples=16000):
+    data = bytearray()
+    for i in range(samples):
+        value = int(math.sin(2 * math.pi * 440 * i / 16000) * (2 ** (width * 8 - 3)))
+        if width == 1:
+            value += 128
+        data.extend(value.to_bytes(width, 'little', signed=width != 1) * channels)
+    output = io.BytesIO()
+    with wave.open(output, 'wb') as wav:
+        wav.setnchannels(channels)
+        wav.setsampwidth(width)
+        wav.setframerate(16000)
+        wav.writeframes(data)
+    return output.getvalue()
+
+
+@pytest.fixture(scope='module')
+def keys():
+    return generate_keypair()
+
+
+@pytest.mark.parametrize('bits', range(1, 9))
+@pytest.mark.parametrize('width,channels', [(1, 1), (2, 2), (3, 1), (4, 2)])
+def test_round_trip_and_sample_bound(keys, bits, width, channels):
+    original = cover(width, channels)
+    stego, info = embed(original, 'Hidden message: \u4f60\u597d', keys[0], bits, 37)
+    result = extract(stego, keys[1], bits, 37)
+    assert result['authentic']
+    assert result['payload']['metadata']['message'] == 'Hidden message: \u4f60\u597d'
+    before_params, before = read_wav(original)
+    after_params, after = read_wav(stego)
+    assert before_params == after_params
+    assert before[:37 * width] == after[:37 * width]
+    for i in range(0, len(before), width):
+        a = int.from_bytes(before[i:i + width], 'little', signed=width != 1)
+        b = int.from_bytes(after[i:i + width], 'little', signed=width != 1)
+        assert abs(a - b) <= (1 << bits) - 1
+    assert info['required_bytes'] <= info['capacity_bytes']
+    assert not extract(tamper(stego), keys[1], bits, 37)['authentic']
+
+
+def test_negative_cases(keys):
+    original = cover()
+    stego, _ = embed(original, 'hello', keys[0])
+    assert not extract(original, keys[1])['authentic']
+    assert not extract(stego, generate_keypair()[1])['authentic']
+    assert not extract(stego, keys[1], start=1)['authentic']
+    assert not extract(stego, keys[1], bits=2)['authentic']
+    params, frames = read_wav(stego)
+    changed = bytearray(frames)
+    changed[0] ^= 1  # packet header
+    assert not extract(write_wav(params, changed), keys[1])['authentic']
+    changed = bytearray(frames)
+    changed[2000] ^= 1  # signed payload
+    assert not extract(write_wav(params, changed), keys[1])['authentic']
+    changed = bytearray(frames)
+    changed[-2] ^= 1  # unused LSB must still be hashed
+    assert extract(write_wav(params, changed), keys[1])['verdict'] == 'Tampered audio'
+    assert not extract(write_wav(params._replace(framerate=8000), frames), keys[1])['authentic']
+
+
+def test_capacity_and_invalid_input(keys):
+    original = cover(samples=100)
+    assert capacity(original, 3, 7) == 93 * 3 // 8
+    with pytest.raises(ValueError, match='Capacity exceeded'):
+        embed(original, 'hello', keys[0])
+    for bits, start in [(0, 0), (9, 0), (1, -1), (1, 100)]:
+        with pytest.raises(ValueError):
+            capacity(original, bits, start)
+    for data in [b'not WAV', original[:-10]]:
+        with pytest.raises(ValueError):
+            capacity(data)
+    with pytest.raises(ValueError, match='Capacity exceeded'):
+        embed(cover(), 'x' * 20000, keys[0])
+
+
+def test_exact_capacity(keys):
+    _, info = embed(cover(), 'boundary', keys[0], bits=8)
+    exact = cover(samples=info['required_bytes'])
+    stego, result = embed(exact, 'boundary', keys[0], bits=8)
+    assert result['required_bytes'] == result['capacity_bytes']
+    assert extract(stego, keys[1], bits=8)['authentic']
+    with pytest.raises(ValueError):
+        embed(cover(samples=info['required_bytes'] - 1), 'boundary', keys[0], bits=8)
+
+
+@pytest.fixture
+def client(monkeypatch, tmp_path):
+    # Supply main's required setting only for tests, without writing a .env file.
+    monkeypatch.setenv('STEGO_SECRET_KEY', 'audio-integration-test-only')
+    app = create_app()
+    app.config['TESTING'] = True
+    from app import routes
+    monkeypatch.setattr(routes, 'UPLOAD_FOLDER', str(tmp_path))
+    return app.test_client()
+
+
+def test_web_workflow(client):
+    import base64
+    home = client.get('/')
+    assert home.status_code == 200
+    assert b'Steganographic Integrity Verification' in home.data
+    assert b'href="/image"' in home.data
+    assert b'href="/audio"' in home.data
+    assert client.get('/image').status_code == 200
+    assert client.get('/audio').status_code == 200
+    result = client.post('/audio/embed', data={
+        'audio': (io.BytesIO(cover()), 'cover.wav'), 'message': 'Web demo',
+        'bits': '2', 'start': '17'})
+    assert result.status_code == 200
+    record = result.get_json()
+    stego = base64.b64decode(record['audio'])
+    def verify(data):
+        return client.post('/audio/extract', data={
+            'audio': (io.BytesIO(data), 'stego.wav'), 'bits': '2', 'start': '17',
+            'public_key': (io.BytesIO(record['public_key'].encode()), 'key.pem')}).get_json()
+    assert verify(stego)['authentic']
+    damaged = client.post('/audio/tamper', data={'audio': (io.BytesIO(stego), 'stego.wav')})
+    assert damaged.status_code == 200
+    assert not verify(damaged.data)['authentic']
+    assert client.post('/audio/embed', data={}).status_code == 400
+    assert client.post('/audio/capacity', data={'audio': (io.BytesIO(b'bad'), 'bad.wav')}).status_code == 400
+
+
+def test_audio_uses_main_persistent_keys(client):
+    import base64
+    from app import routes
+    from cryptography.hazmat.primitives import serialization
+
+    def encode():
+        response = client.post('/audio/embed', data={
+            'audio': (io.BytesIO(cover()), 'shared-key.wav'), 'message': 'Persistent key'})
+        assert response.status_code == 200
+        return response.get_json()
+
+    first, second = encode(), encode()
+    expected = routes.PUBLIC_KEY.public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+    assert first['public_key'] == second['public_key'] == expected
+    stego = base64.b64decode(first['audio'])
+    response = client.post('/audio/extract', data={
+        'audio': (io.BytesIO(stego), 'stego.wav')})
+    assert response.get_json()['authentic']
+    assert response.get_json()['payload']['media_id'] == 'shared-key.wav'
+    wrong_key = generate_keypair()[1].public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    response = client.post('/audio/extract', data={
+        'audio': (io.BytesIO(stego), 'stego.wav'),
+        'public_key': (io.BytesIO(wrong_key), 'wrong.pem')})
+    assert not response.get_json()['authentic']
+    response = client.post('/audio/extract', data={
+        'audio': (io.BytesIO(stego), 'stego.wav'),
+        'public_key': (io.BytesIO(b'bad key'), 'broken.pem')})
+    assert response.status_code == 400
+
+
+def test_main_image_workflow_preserved(client):
+    from PIL import Image
+
+    output = io.BytesIO()
+    Image.new('RGB', (100, 100), (100, 150, 200)).save(output, format='PNG')
+    output.seek(0)
+    embedded = client.post('/embed', data={
+        'cover_image': (output, 'regression.png'), 'bits_per_channel': '1'})
+    assert embedded.status_code == 200
+    stego = client.get('/uploads/stego_regression.png')
+    assert stego.status_code == 200
+    verified = client.post('/verify', data={
+        'stego_image': (io.BytesIO(stego.data), 'received.png'), 'bits_per_channel': '1'})
+    assert verified.status_code == 200
+    assert b'Authentic' in verified.data
+
+
+def test_audio_upload_limit_matches_main_proxy(client):
+    client.application.config['MAX_CONTENT_LENGTH'] = 100
+    response = client.post('/audio/embed', data={
+        'audio': (io.BytesIO(cover()), 'large.wav')})
+    assert response.status_code == 413
+    assert '20 MiB' in response.get_json()['error']

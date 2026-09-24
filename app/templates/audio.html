@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audio steganography</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/audio.css') }}">
+</head>
+<body>
+<div class="container audio-page">
+<nav><a href="{{ url_for('main.index') }}">Home</a> · <a href="{{ url_for('main.image_stego_page') }}">Image Steganography</a></nav>
+<header class="page-header">
+<h1>INF2005 Audio Steganography</h1>
+<p>Hide a signed message in PCM WAV audio and check it for tampering.</p>
+</header>
+<p class="note">For a listening comparison, use 16-bit audio and 1–2 LSBs. Higher settings, especially with 8-bit audio, may add audible noise.</p>
+<section class="card">
+  <h2>1. Embed</h2>
+  <form id="embed">
+    <label>Cover WAV <input type="file" name="audio" accept=".wav,audio/wav" required></label>
+    <label>LSBs per sample <select name="bits">{% for n in range(1,9) %}<option>{{ n }}</option>{% endfor %}</select></label>
+    <label>Start sample (interleaved across channels) <input name="start" type="number" min="0" value="0" required></label>
+    <label>Message <textarea name="message" required></textarea></label>
+    <button type="button" id="capacity">Check capacity</button><button>Embed and sign</button>
+  </form>
+  <p id="capacity-result" role="status"></p>
+  <div class="players"><div><h3>Cover</h3><audio id="cover" controls></audio></div><div><h3>Stego</h3><audio id="stego" controls></audio></div></div>
+  <div id="downloads"></div>
+  <p class="note">Audio uses the same saved signing key as the image workflow. Download the public key for verification on another instance and share the bit setting and start sample with the recipient. The message is hidden, not encrypted.</p>
+</section>
+<section class="card">
+  <h2>2. Extract and verify</h2>
+  <form id="extract">
+    <label>Stego WAV <input type="file" name="audio" accept=".wav,audio/wav" required></label>
+    <label>Trusted public key <input type="file" name="public_key" accept=".pem"></label>
+    <label>LSBs used <select name="bits">{% for n in range(1,9) %}<option>{{ n }}</option>{% endfor %}</select></label>
+    <label>Start sample used <input name="start" type="number" min="0" value="0" required></label>
+    <button>Extract and verify</button>
+  </form>
+  <pre id="verdict" role="status"></pre>
+</section>
+<section class="card">
+  <h2>3. Tampered-audio negative case</h2>
+  <p>Upload the saved stego WAV. This changes one audio sample. Download the result and verify it above using the same public key, bits, and start sample; verification should fail.</p>
+  <form id="tamper"><label>Stego WAV <input type="file" name="audio" accept=".wav,audio/wav" required></label><button>Create tampered WAV</button></form>
+  <div id="tampered-download"></div>
+</section>
+<p id="error" role="alert"></p>
+</div>
+<script src="{{ url_for('static', filename='audio.js') }}"></script>
+</body></html>
