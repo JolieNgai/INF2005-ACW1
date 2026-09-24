@@ -23,14 +23,19 @@ at `/audio`. Both workflows use the persistent RSA keys in `app/keys/`.
    cd INF2005-ACW1
    ```
 
-2. Use the team's local `.env` file containing `STEGO_SECRET_KEY=...` (required by
-   the image workflow and Docker Compose; do not commit the secret).
-   Open Docker Desktop, then start the stack (Flask + gunicorn + nginx):
+2. Create a `.env` file in the project root using `.env.example` as a template,
+   and set the team's secret key:
+   ```
+   STEGO_SECRET_KEY=<key>
+   ```
+   The app will not start without this setting. Do not commit the local `.env` file.
+
+3. Open Docker Desktop, then start the stack (Flask + gunicorn + nginx):
    ```
    docker compose up -d
    ```
 
-3. Open the app:
+4. Open the app:
    ```
    http://localhost:8080
    ```
@@ -47,11 +52,18 @@ INF2005-ACW1/
 │   ├── image_stego.py    # PNG LSB embed/extract logic
 │   ├── audio_stego.py    # PCM WAV LSB embedding and audio verification
 │   ├── audio_demo.py     # Generate sample WAVs and verification evidence
+│   ├── attack_simulation.py # Automated security attack simulation
+│   ├── verdict.py        # Shared verdict vocabulary and error mapping
+│   ├── validation.py     # Shared upload/input validation helpers
 │   ├── test_audio_stego.py
 │   ├── test_crypto_payload.py
+│   ├── test_attack_simulation.py
 │   ├── static/
 │   └── templates/
 ├── examples/audio/      # Generated cover, stego, tampered WAVs and demo public key
+├── evidence/
+│   └── attack_results_<datetime>_SGT.json
+├── .env.example
 ├── Dockerfile
 ├── docker-compose.yml
 ├── nginx/
@@ -206,3 +218,53 @@ Handles payload construction, hashing, signing, and signature verification.
 ```powershell
 docker compose exec web python -m app.crypto_payload
 ```
+
+## Orchestration & Error Handling (app/verdict.py, app/routes.py)
+
+- `Verdict` enum defines the six verdict categories from FR10, used as the shared
+  vocabulary across modules:
+  - `Authentic` — signature valid, hash matches
+  - `Tampered` — signature valid, hash mismatch
+  - `Signature Invalid` — signature check fails
+  - `Payload Missing` — no payload could be extracted
+  - `Wrong Start Location` — extraction at the derived offset yields no valid payload
+  - `Cannot Verify` — unsupported file, missing dependency module, or unexpected error
+- `verdict_from_exception(exc)` maps unexpected exceptions (including calls to
+  not-yet-implemented modules) to `Cannot Verify` with an explanation, instead of
+  leaking a raw stack trace to the user.
+- A blueprint-level error handler in `routes.py` catches any unhandled exception raised
+  inside a route and renders it via `home.html` with a clear error message, so the app
+  stays usable instead of showing a raw traceback.
+
+## Attack Simulation Module (`app/attack_simulation.py`)
+
+Runs automated attacks against the crypto/payload module and records the expected and actual verification results.
+
+**Current scenarios:**
+
+- Valid payload baseline
+- Payload corruption
+- Wrong public key
+- Corrupted signature
+- Replay attempt
+- Signed-payload substitution
+
+**Run automated tests:**
+
+```bash
+docker compose run --rm web pytest -q app/test_attack_simulation.py
+```
+
+**Run attack simulation:**
+
+```bash
+docker compose run --rm web python -m app.attack_simulation
+```
+
+The command displays each scenario’s verification result and creates a new evidence file:
+
+```text
+evidence/attack_results_YYYYMMDD_HHMMSS_microseconds_SGT.json
+```
+
+Each JSON report contains the Singapore generation time, test summary, expected and actual results, attack-detection status, and an explanation of each scenario.
