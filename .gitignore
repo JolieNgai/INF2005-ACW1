@@ -5,6 +5,11 @@ __pycache__/
 .env
 venv/
 
+# RSA keys
+app/keys/
+*.pem
+
+
 # C extensions
 *.so
 
