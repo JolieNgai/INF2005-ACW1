@@ -3,3 +3,4 @@ pytest
 pillow
 gunicorn
 flask
+python-dotenv
