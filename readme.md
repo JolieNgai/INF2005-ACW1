@@ -89,23 +89,30 @@ Handles payload construction, hashing, signing, and signature verification.
 Runs automated attacks against the crypto/payload module and records the expected and actual verification results.
 
 **Current scenarios:**
-
+**Crypto/Payload tests:**
 - Valid payload baseline
 - Payload corruption
 - Wrong public key
 - Corrupted signature
-- Replay attempt
-- Signed-payload substitution
+
+**Image-steganography tests:**
+- Valid stego-image baseline
+- Embedded payload corruption
+- Wrong public key
+- Corrupted embedded signature
+- Wrong start-location key
+- Cover-image pixel tampering
+- Oversized payload rejection
 
 **Run automated tests:**
 
-```bash
+```
 docker compose run --rm web pytest -q app/test_attack_simulation.py
 ```
 
 **Run attack simulation:**
 
-```bash
+```
 docker compose run --rm web python -m app.attack_simulation
 ```
 

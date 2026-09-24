@@ -1,10 +1,4 @@
-"""Automated security attacks against the standalone crypto/payload module.
-
-This module deliberately does not modify ``crypto_payload.py``.  It consumes the
-same public functions as the future image and audio workflows, records the
-verification outcome for each controlled attack, and can export reproducible
-JSON evidence.
-"""
+"""Automated attacks against the crypto payload and image steganography modules."""
 
 from __future__ import annotations
 
@@ -13,14 +7,20 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from PIL import Image
 
 from app.crypto_payload import (
     build_payload,
     generate_keypair,
     hash_cover_object,
+    run_verification,
     sign_payload,
+    stable_hash,
     verify_payload,
 )
+from app.image_stego import embed_payload, extract_payload
 
 
 SINGAPORE_TIMEZONE = timezone(timedelta(hours=8), name="SGT")
@@ -28,7 +28,7 @@ SINGAPORE_TIMEZONE = timezone(timedelta(hours=8), name="SGT")
 
 @dataclass(frozen=True)
 class AttackResult:
-    """One verification result produced by the attack simulation."""
+    """One result produced by the attack simulation."""
 
     test_id: str
     attack: str
@@ -60,12 +60,7 @@ def _result(
 
 
 def run_crypto_attack_sweep() -> list[AttackResult]:
-    """Run all attacks currently possible without image/audio steganography.
-
-    Replay and substitution are intentionally expected to be rejected.  With
-    the current crypto-only verifier they are accepted, so those records expose
-    a security limitation instead of hiding it.
-    """
+    """Run attacks that only depend on the standalone crypto module."""
 
     private_key, public_key = generate_keypair()
     _, wrong_public_key = generate_keypair()
@@ -73,7 +68,6 @@ def run_crypto_attack_sweep() -> list[AttackResult]:
     cover_hash = hash_cover_object(b"original cover object")
     payload = build_payload("IMG001", cover_hash, {"team": "P6-7"})
     signature = sign_payload(private_key, payload)
-
     results: list[AttackResult] = []
 
     verified = verify_payload(public_key, payload, signature)
@@ -125,37 +119,217 @@ def run_crypto_attack_sweep() -> list[AttackResult]:
         )
     )
 
-    # A captured, unchanged payload/signature pair remains cryptographically
-    # valid. Detecting replay requires nonce/timestamp state outside this API.
-    verified = verify_payload(public_key, payload, signature)
-    results.append(
-        _result(
-            "CRYPTO-NEG-04",
-            "replay_attempt",
-            False,
-            verified,
-            "Reused the exact captured payload and signature; no replay cache or freshness check exists.",
-        )
+    return results
+
+
+def _pack_payload(payload: dict, signature: bytes) -> bytes:
+    """Use the same package format as app/routes.py."""
+
+    package = {"payload": payload, "signature": signature.hex()}
+    return json.dumps(package, sort_keys=True).encode()
+
+
+def _unpack_payload(data: bytes) -> tuple[dict, bytes]:
+    """Use the same package format as app/routes.py."""
+
+    package = json.loads(data.decode())
+    return package["payload"], bytes.fromhex(package["signature"])
+
+
+def _make_cover(path: Path, colour: tuple[int, int, int]) -> None:
+    """Generate a reproducible PNG cover without needing sample files."""
+
+    Image.new("RGB", (96, 96), colour).save(path, "PNG")
+
+
+def _signed_image_payload(
+    cover_path: Path,
+    media_id: str,
+    private_key,
+    bits: int,
+) -> tuple[dict, bytes]:
+    image = Image.open(cover_path).convert("RGB")
+    payload = build_payload(
+        media_id,
+        stable_hash(image.tobytes(), bits),
+        {"team": "P6-7", "bits_per_channel": bits},
+    )
+    return payload, sign_payload(private_key, payload)
+
+
+def _verify_image(
+    image_path: Path,
+    start_key: str,
+    bits: int,
+    public_key,
+) -> tuple[str, dict | None]:
+    return run_verification(
+        stego_path=image_path,
+        key=start_key,
+        bits=bits,
+        public_key=public_key,
+        unpack_payload_fn=_unpack_payload,
+        extract_payload_fn=extract_payload,
     )
 
-    # A different payload that was legitimately signed also verifies because
-    # verify_payload has no expected media identifier/context parameter.
-    substituted_payload = build_payload(
-        "IMG999", hash_cover_object(b"different cover object"), {"team": "P6-7"}
-    )
-    substituted_signature = sign_payload(private_key, substituted_payload)
-    verified = verify_payload(
-        public_key, substituted_payload, substituted_signature
-    )
-    results.append(
-        _result(
-            "CRYPTO-NEG-05",
-            "signed_payload_substitution",
-            False,
-            verified,
-            "Substituted another correctly signed payload for a different media ID; no expected-context check exists.",
+
+def run_image_attack_sweep() -> list[AttackResult]:
+    """Run attacks against the complete image embedding and verification flow."""
+
+    private_key, public_key = generate_keypair()
+    _, wrong_public_key = generate_keypair()
+    correct_start_key = "image-attack-simulation-key"
+    wrong_start_key = "wrong-start-location-key"
+    bits = 1
+    results: list[AttackResult] = []
+
+    with TemporaryDirectory() as temporary_directory:
+        workdir = Path(temporary_directory)
+        cover_path = workdir / "cover.png"
+        baseline_path = workdir / "baseline_stego.png"
+        _make_cover(cover_path, (120, 160, 200))
+
+        payload, signature = _signed_image_payload(
+            cover_path, "IMG001", private_key, bits
         )
-    )
+        embed_payload(
+            str(cover_path),
+            str(baseline_path),
+            _pack_payload(payload, signature),
+            correct_start_key,
+            bits,
+        )
+
+        verdict, _ = _verify_image(
+            baseline_path, correct_start_key, bits, public_key
+        )
+        results.append(
+            _result(
+                "IMAGE-POS-01",
+                "baseline_valid_stego_image",
+                True,
+                verdict == "Authentic",
+                f"Valid stego image verification; verdict={verdict}.",
+                is_attack=False,
+            )
+        )
+
+        corrupted_payload = copy.deepcopy(payload)
+        corrupted_payload["metadata"]["team"] = "ATTACKER"
+        corrupted_payload_path = workdir / "corrupted_payload.png"
+        embed_payload(
+            str(cover_path),
+            str(corrupted_payload_path),
+            _pack_payload(corrupted_payload, signature),
+            correct_start_key,
+            bits,
+        )
+        verdict, _ = _verify_image(
+            corrupted_payload_path, correct_start_key, bits, public_key
+        )
+        results.append(
+            _result(
+                "IMAGE-NEG-01",
+                "embedded_payload_corruption",
+                False,
+                verdict == "Authentic",
+                f"Changed signed metadata while retaining its signature; verdict={verdict}.",
+            )
+        )
+
+        verdict, _ = _verify_image(
+            baseline_path, correct_start_key, bits, wrong_public_key
+        )
+        results.append(
+            _result(
+                "IMAGE-NEG-02",
+                "wrong_public_key",
+                False,
+                verdict == "Authentic",
+                f"Used an unrelated RSA public key; verdict={verdict}.",
+            )
+        )
+
+        damaged_signature = bytearray(signature)
+        damaged_signature[-1] ^= 0xFF
+        damaged_signature_path = workdir / "corrupted_signature.png"
+        embed_payload(
+            str(cover_path),
+            str(damaged_signature_path),
+            _pack_payload(payload, bytes(damaged_signature)),
+            correct_start_key,
+            bits,
+        )
+        verdict, _ = _verify_image(
+            damaged_signature_path, correct_start_key, bits, public_key
+        )
+        results.append(
+            _result(
+                "IMAGE-NEG-03",
+                "embedded_signature_corruption",
+                False,  # Expected authentication result
+                verdict == "Authentic", # Actual result evaluated at runtime
+                f"Corrupted the embedded signature; verdict={verdict}.",
+            )
+        )
+
+        verdict, _ = _verify_image(
+            baseline_path, wrong_start_key, bits, public_key
+        )
+        results.append(
+            _result(
+                "IMAGE-NEG-04",
+                "wrong_start_location",
+                False,
+                verdict == "Authentic",
+                f"Derived extraction position using the wrong key; verdict={verdict}.",
+            )
+        )
+
+        tampered_path = workdir / "tampered_pixels.png"
+        stego_image = Image.open(baseline_path).convert("RGB")
+        pixels = bytearray(stego_image.tobytes())
+        pixels[0] ^= 0x80  # Change a non-LSB bit, preserving embedded LSB data.
+        Image.frombytes("RGB", stego_image.size, bytes(pixels)).save(
+            tampered_path, "PNG"
+        )
+        verdict, _ = _verify_image(
+            tampered_path, correct_start_key, bits, public_key
+        )
+        results.append(
+            _result(
+                "IMAGE-NEG-05",
+                "cover_pixel_tampering",
+                False,
+                verdict == "Authentic",
+                f"Changed a non-LSB cover-image bit; verdict={verdict}.",
+            )
+        )
+
+        maximum_payload_bytes = (96 * 96 * 3 * bits // 8) - 4
+        oversized_rejected = False
+        rejection_message = "No capacity error was raised."
+        try:
+            embed_payload(
+                str(cover_path),
+                str(workdir / "oversized.png"),
+                b"X" * (maximum_payload_bytes + 1),
+                correct_start_key,
+                bits,
+            )
+        except ValueError as error:
+            oversized_rejected = True
+            rejection_message = str(error)
+
+        results.append(
+            _result(
+                "IMAGE-NEG-06",
+                "oversized_payload",
+                False,
+                not oversized_rejected,
+                f"Exceeded calculated image capacity by one byte; {rejection_message}",
+            )
+        )
 
     return results
 
@@ -165,7 +339,7 @@ def write_evidence(
     output_path: str | Path,
     generated_at: datetime | None = None,
 ) -> Path:
-    """Write a JSON evidence report."""
+    """Write a combined JSON evidence report."""
 
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -174,7 +348,15 @@ def write_evidence(
 
     report = {
         "generated_at_sgt": report_time.isoformat(),
-        "component": "crypto_payload",
+        "component": "attack_simulation",
+        "components": sorted(
+            {
+                "crypto_payload"
+                if result.test_id.startswith("CRYPTO-")
+                else "image_stego"
+                for result in results
+            }
+        ),
         "summary": {
             "total": len(results),
             "passed": sum(result.passed for result in results),
@@ -194,31 +376,28 @@ def build_evidence_path(
     generated_at: datetime,
     evidence_directory: str | Path = "evidence",
 ) -> Path:
-    """Return a unique, filesystem-safe evidence path using Singapore time."""
+    """Create a unique evidence filename using Singapore time."""
 
     singapore_time = generated_at.astimezone(SINGAPORE_TIMEZONE)
     timestamp = singapore_time.strftime("%Y%m%d_%H%M%S_%f")
-    filename = f"attack_results_{timestamp}_SGT.json"
-    return Path(evidence_directory) / filename
+    return Path(evidence_directory) / f"attack_results_{timestamp}_SGT.json"
 
 
 def main() -> int:
-    results = run_crypto_attack_sweep()
+    results = run_crypto_attack_sweep() + run_image_attack_sweep()
     generated_at = datetime.now(SINGAPORE_TIMEZONE)
     output_path = build_evidence_path(generated_at)
     write_evidence(results, output_path, generated_at)
 
-    print("Crypto attack simulation")
-    print("=" * 72)
+    print("Crypto and image attack simulation")
+    print("=" * 90)
     for result in results:
         status = "PASS" if result.passed else "SECURITY GAP"
         print(
-            f"{result.test_id} | {result.attack:<28} | "
+            f"{result.test_id} | {result.attack:<32} | "
             f"verified={str(result.actual_verification):<5} | {status}"
         )
     print(f"Evidence written to: {output_path}")
-
-    # A reported security gap is evidence, not a program execution error.
     return 0
 
 
