@@ -226,3 +226,6 @@ __marimo__/
 
 # Evidence Folder
 /evidence/
+
+# Uploads Folder
+app/uploads/
