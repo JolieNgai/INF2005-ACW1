@@ -10,6 +10,8 @@ from .crypto_payload import (
 )
 from .image_stego import check_capacity, embed_payload, extract_payload
 
+from .verdict import Verdict, verdict_from_exception
+
 load_dotenv()
 
 bp = Blueprint('main', __name__)
@@ -246,3 +248,8 @@ def verify():
         extracted_payload=payload,
         bits=bits,
     )
+
+@bp.errorhandler(Exception)
+def handle_unexpected_error(e):
+    verdict, explanation = verdict_from_exception(e)
+    return render_template('home.html', error=explanation, verdict=verdict.value), 500
