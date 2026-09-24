@@ -4,7 +4,7 @@ import time
 import secrets
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import hashes, serialization
-
+from .verdict import Verdict
 
 def generate_keypair():
     """Generate an RSA private/public keypair."""
@@ -74,7 +74,7 @@ def stable_hash(pixel_bytes: bytes, bits_per_channel: int) -> bytes:
 
 def run_verification(stego_path, key, bits, public_key, unpack_payload_fn, extract_payload_fn):
     """
-    Pure function: given a stego file path, returns (verdict, payload_dict_or_None).
+    Pure function: given a stego file path, returns (Verdict, payload_dict_or_None).
     No Flask/HTTP dependency, so this can be unit-tested or reused by a CLI/tamper test.
     """
     from PIL import Image
@@ -83,21 +83,21 @@ def run_verification(stego_path, key, bits, public_key, unpack_payload_fn, extra
         img = Image.open(stego_path).convert("RGB")
         extracted_bytes = extract_payload_fn(stego_path, key, bits_per_channel=bits)
     except Exception:
-        return "Cannot Verify", None
+        return Verdict.CANNOT_VERIFY, None
 
     try:
         payload, signature = unpack_payload_fn(extracted_bytes)
     except Exception:
-        return "Payload Missing", None
+        return Verdict.PAYLOAD_MISSING, None
 
     if not verify_payload(public_key, payload, signature):
-        return "Signature Invalid", None
+        return Verdict.SIGNATURE_INVALID, None
 
     recomputed_hash = stable_hash(img.tobytes(), bits).hex()
     if recomputed_hash != payload["hash"]:
-        return "Tampered", payload
+        return Verdict.TAMPERED, payload
 
-    return "Authentic", payload
+    return Verdict.AUTHENTIC, payload
 
 if __name__ == "__main__":
     priv, pub = generate_keypair()
