@@ -12,6 +12,8 @@ def create_app():
     app.register_blueprint(bp)
     from .audio_routes import bp as audio_bp
     app.register_blueprint(audio_bp)
+    from .attack_routes import bp as attack_bp
+    app.register_blueprint(attack_bp)
 
     from .verdict import verdict_from_exception
 

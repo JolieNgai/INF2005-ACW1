@@ -1,0 +1,129 @@
+.attack-page nav {
+    margin-bottom: 24px;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 25px;
+}
+
+.summary-card {
+    background: #fff;
+    padding: 20px;
+    border-radius: 10px;
+    border-top: 4px solid #4b5563;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08);
+}
+
+.summary-card.success {
+    border-top-color: #16803a;
+}
+
+.summary-card.failure {
+    border-top-color: #b42318;
+}
+
+.summary-card span {
+    display: block;
+    color: #666;
+    font-size: 14px;
+}
+
+.summary-card strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 28px;
+}
+
+.result-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.result-heading h2,
+.result-heading .note {
+    margin: 0 0 6px;
+}
+
+.download-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.download-link.secondary {
+    background: #5b6470;
+}
+
+.download-link.secondary:hover {
+    background: #454c55;
+}
+
+.table-wrapper {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+th,
+td {
+    padding: 12px;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: #f4f6f8;
+    white-space: nowrap;
+}
+
+.status {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.status.pass {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status.gap {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+@media (max-width: 800px) {
+    .summary-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .result-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .download-actions {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 480px) {
+    .summary-grid {
+        grid-template-columns: 1fr;
+    }
+}
