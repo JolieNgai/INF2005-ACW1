@@ -75,6 +75,16 @@ INF2005-ACW1/
 
 ## Dependencies
 
+## Variable start-location module
+
+`app/start_location.py` owns the shared keyed start-location scheme for images
+and PCM audio samples. The PNG flow uses authenticated framing and reports
+`Wrong Start Location` on location/frame authentication failure. Existing
+images made with the old format must be embedded again. See
+[start_location_notes.md](start_location_notes.md) for the algorithm, API,
+sole ownership statement, audio integration contract, and security limits.
+
+## Usage
 See `requirements.txt`. Key packages: Flask, gunicorn, cryptography, Pillow,
 python-dotenv, and pytest. Docker installs these when building the app image.
 After dependency changes, rebuild once with `docker compose up -d --build`;
@@ -215,6 +225,7 @@ Handles payload construction, hashing, signing, and signature verification.
 - `verify_payload(public_key, payload: dict, signature: bytes)` → True/False
 
 **Run standalone demo:**
+    python crypto_payload.py
 
 ```powershell
 docker compose exec web python -m app.crypto_payload
