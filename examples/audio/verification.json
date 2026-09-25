@@ -1,0 +1,36 @@
+{
+  "bits": 1,
+  "start": 100,
+  "required_bytes": 645,
+  "capacity_bytes": 16525,
+  "positive": {
+    "authentic": true,
+    "verdict": "Authentic",
+    "payload": {
+      "hash": "d245f3dd15668648068404fface1ba1c119b4ceb7e76961e7bbc77422e326864",
+      "media_id": "AUDIO001",
+      "metadata": {
+        "bits": 1,
+        "message": "Explain how steganography can be used to embed hidden verification data.",
+        "start": 100
+      },
+      "nonce": "aecd57af47a440cd",
+      "timestamp": 1790181384
+    }
+  },
+  "negative": {
+    "authentic": false,
+    "verdict": "Tampered audio",
+    "payload": {
+      "hash": "d245f3dd15668648068404fface1ba1c119b4ceb7e76961e7bbc77422e326864",
+      "media_id": "AUDIO001",
+      "metadata": {
+        "bits": 1,
+        "message": "Explain how steganography can be used to embed hidden verification data.",
+        "start": 100
+      },
+      "nonce": "aecd57af47a440cd",
+      "timestamp": 1790181384
+    }
+  }
+}
