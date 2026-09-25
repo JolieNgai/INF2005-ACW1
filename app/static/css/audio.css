@@ -1,0 +1,20 @@
+.audio-page nav { margin-bottom: 24px; }
+.audio-page input[type="number"], .audio-page textarea {
+    display: block;
+    width: 100%;
+    padding: 11px;
+    margin-top: 6px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font: inherit;
+}
+.audio-page textarea { min-height: 90px; }
+.audio-page audio { width: 100%; }
+.audio-page .players {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+}
+.audio-page .download-link { margin: 12px 12px 0 0; }
+.audio-page button:disabled { opacity: 0.6; cursor: wait; }
+.audio-page #error { color: #a12626; }
