@@ -48,6 +48,7 @@ INF2005-ACW1/
 │   ├── __init__.py       # Flask app factory
 │   ├── routes.py         # Home/image routes and persistent RSA keys
 │   ├── audio_routes.py   # Audio page, embed/extract, capacity and tamper endpoints
+|   ├── attack_routes.py  # Attack page, sweep execution and evidence downloads
 │   ├── crypto_payload.py # Hashing, payload building, signing/verification
 │   ├── image_stego.py    # PNG LSB embed/extract logic
 │   ├── audio_stego.py    # PCM WAV LSB embedding and audio verification
@@ -249,33 +250,64 @@ docker compose exec web python -m app.crypto_payload
 
 ## Attack Simulation Module (`app/attack_simulation.py`)
 
-Runs automated attacks against the crypto/payload module and records the expected and actual verification results.
+Runs automated negative-case security tests against the crypto, image-steganography,
+and audio-steganography modules. Each scenario records its expected and actual
+verification result in a timestamped JSON evidence report.
 
 **Current scenarios:**
-
+**Crypto/Payload tests:**
 - Valid payload baseline
 - Payload corruption
 - Wrong public key
 - Corrupted signature
-- Replay attempt
-- Signed-payload substitution
+
+**Image-steganography tests:**
+- Valid stego-image baseline
+- Embedded payload corruption
+- Wrong public key
+- Corrupted embedded signature
+- Wrong start-location key
+- Cover-image pixel tampering
+- Oversized payload rejection
+- Explicit wrong start-index extraction
+- Authenticated bootstrap-header tampering
+
+**Audio-steganography tests:**
+- Valid stego-audio baseline
+- Embedded payload corruption
+- Wrong public key
+- Corrupted embedded signature
+- Wrong start location
+- Audio-sample tampering
+- Oversized payload rejection
+
+The suite currently runs 20 scenarios: 3 positive baselines and 17 negative cases.
+
+**Run from the website:**
+
+Open http://localhost:8080/attack-simulation, click Run Attack Simulation,
+then review the results table. Select Download CSV Evidence for an
+Excel-friendly report or Download JSON Evidence for the complete structured
+record.
 
 **Run automated tests:**
 
-```bash
+```
 docker compose run --rm web pytest -q app/test_attack_simulation.py
 ```
 
+Expected result: 5 passed. These five pytest functions validate the crypto,
+image and audio sweeps, combined evidence generation, and the web run/download
+flow.
+
 **Run attack simulation:**
 
-```bash
+```
 docker compose run --rm web python -m app.attack_simulation
 ```
 
 The command displays each scenario’s verification result and creates a new evidence file:
 
-```text
 evidence/attack_results_YYYYMMDD_HHMMSS_microseconds_SGT.json
-```
 
 Each JSON report contains the Singapore generation time, test summary, expected and actual results, attack-detection status, and an explanation of each scenario.
