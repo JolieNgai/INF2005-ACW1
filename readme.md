@@ -50,6 +50,15 @@ INF2005-ACW1/
 ## Dependencies
 See `requirements.txt`. Key packages: Flask, gunicorn, cryptography, Pillow.
 
+## Variable start-location module
+
+`app/start_location.py` owns the shared keyed start-location scheme for images
+and PCM audio samples. The PNG flow uses authenticated framing and reports
+`Wrong Start Location` on location/frame authentication failure. Existing
+images made with the old format must be embedded again. See
+[start_location_notes.md](start_location_notes.md) for the algorithm, API,
+sole ownership statement, audio integration contract, and security limits.
+
 ## Usage
 1. Upload a PNG cover image.
 2. Select number of LSBs to use (1–8).

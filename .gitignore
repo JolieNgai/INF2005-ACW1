@@ -9,6 +9,9 @@ venv/
 app/keys/
 *.pem
 
+# Uploaded, stego, and verification images
+/app/uploads/
+
 
 # C extensions
 *.so
