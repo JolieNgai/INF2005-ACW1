@@ -1,9 +1,13 @@
-"""Automated attacks against the crypto payload and image steganography modules."""
+"""Automated attacks against crypto, image and audio steganography modules."""
 
 from __future__ import annotations
 
+import base64
 import copy
+import io
 import json
+import math
+import wave
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +15,7 @@ from tempfile import TemporaryDirectory
 
 from PIL import Image
 
+from app import audio_stego
 from app.crypto_payload import (
     build_payload,
     generate_keypair,
@@ -21,6 +26,7 @@ from app.crypto_payload import (
     verify_payload,
 )
 from app.image_stego import embed_payload, extract_payload
+from app.verdict import Verdict
 
 
 SINGAPORE_TIMEZONE = timezone(timedelta(hours=8), name="SGT")
@@ -162,7 +168,7 @@ def _verify_image(
     start_key: str,
     bits: int,
     public_key,
-) -> tuple[str, dict | None]:
+) -> tuple[Verdict, dict | None]:
     return run_verification(
         stego_path=image_path,
         key=start_key,
@@ -208,8 +214,8 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 "IMAGE-POS-01",
                 "baseline_valid_stego_image",
                 True,
-                verdict == "Authentic",
-                f"Valid stego image verification; verdict={verdict}.",
+                verdict is Verdict.AUTHENTIC,
+                f"Valid stego image verification; verdict={verdict.value}.",
                 is_attack=False,
             )
         )
@@ -232,8 +238,8 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 "IMAGE-NEG-01",
                 "embedded_payload_corruption",
                 False,
-                verdict == "Authentic",
-                f"Changed signed metadata while retaining its signature; verdict={verdict}.",
+                verdict is Verdict.AUTHENTIC,
+                f"Changed signed metadata while retaining its signature; verdict={verdict.value}.",
             )
         )
 
@@ -245,8 +251,8 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 "IMAGE-NEG-02",
                 "wrong_public_key",
                 False,
-                verdict == "Authentic",
-                f"Used an unrelated RSA public key; verdict={verdict}.",
+                verdict is Verdict.AUTHENTIC,
+                f"Used an unrelated RSA public key; verdict={verdict.value}.",
             )
         )
 
@@ -268,8 +274,8 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 "IMAGE-NEG-03",
                 "embedded_signature_corruption",
                 False,  # Expected authentication result
-                verdict == "Authentic", # Actual result evaluated at runtime
-                f"Corrupted the embedded signature; verdict={verdict}.",
+                verdict is Verdict.AUTHENTIC,  # Actual result evaluated at runtime
+                f"Corrupted the embedded signature; verdict={verdict.value}.",
             )
         )
 
@@ -281,8 +287,8 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 "IMAGE-NEG-04",
                 "wrong_start_location",
                 False,
-                verdict == "Authentic",
-                f"Derived extraction position using the wrong key; verdict={verdict}.",
+                verdict is Verdict.AUTHENTIC,
+                f"Derived extraction position using the wrong key; verdict={verdict.value}.",
             )
         )
 
@@ -301,8 +307,8 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 "IMAGE-NEG-05",
                 "cover_pixel_tampering",
                 False,
-                verdict == "Authentic",
-                f"Changed a non-LSB cover-image bit; verdict={verdict}.",
+                verdict is Verdict.AUTHENTIC,
+                f"Changed a non-LSB cover-image bit; verdict={verdict.value}.",
             )
         )
 
@@ -334,6 +340,241 @@ def run_image_attack_sweep() -> list[AttackResult]:
     return results
 
 
+def _make_audio_cover(
+    samples: int = 16000,
+    sample_width: int = 2,
+    channels: int = 1,
+) -> bytes:
+    """Generate a deterministic PCM WAV cover without external sample files."""
+
+    frames = bytearray()
+    for index in range(samples):
+        value = int(
+            math.sin(2 * math.pi * 440 * index / 16000)
+            * (2 ** (sample_width * 8 - 3))
+        )
+        if sample_width == 1:
+            value += 128
+        sample = value.to_bytes(
+            sample_width, "little", signed=sample_width != 1
+        )
+        frames.extend(sample * channels)
+
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(channels)
+        wav.setsampwidth(sample_width)
+        wav.setframerate(16000)
+        wav.writeframes(frames)
+    return output.getvalue()
+
+
+def _read_audio_envelope(
+    stego_bytes: bytes,
+    bits: int,
+    start: int,
+) -> dict:
+    """Read the embedded JSON envelope for controlled attack mutation."""
+
+    params, frames = audio_stego.read_wav(stego_bytes)
+    header = audio_stego._extract_bytes(
+        frames, params.sampwidth, bits, start, audio_stego.HEADER.size
+    )
+    magic, body_length = audio_stego.HEADER.unpack(header)
+    if magic != audio_stego.MAGIC:
+        raise ValueError("Audio attack fixture does not contain a valid packet.")
+    packet = audio_stego._extract_bytes(
+        frames,
+        params.sampwidth,
+        bits,
+        start,
+        audio_stego.HEADER.size + body_length,
+    )
+    return json.loads(packet[audio_stego.HEADER.size:])
+
+
+def _replace_audio_packet(
+    stego_bytes: bytes,
+    payload: dict,
+    signature: bytes,
+    bits: int,
+    start: int,
+) -> bytes:
+    """Replace a packet while retaining the WAV parameters and PCM cover."""
+
+    packet = audio_stego._packet(payload, signature)
+    params, frames = audio_stego.read_wav(stego_bytes)
+    if len(packet) > audio_stego.capacity(stego_bytes, bits, start):
+        raise ValueError("Replacement audio packet exceeds cover capacity.")
+
+    output = bytearray(frames)
+    for offset in range(0, len(packet) * 8, bits):
+        used = min(bits, len(packet) * 8 - offset)
+        value = sum(
+            (
+                (packet[(offset + bit) // 8] >> ((offset + bit) % 8))
+                & 1
+            )
+            << bit
+            for bit in range(used)
+        )
+        frame_index = (start + offset // bits) * params.sampwidth
+        output[frame_index] = (
+            output[frame_index] & (255 ^ ((1 << used) - 1))
+        ) | value
+    return audio_stego.write_wav(params, output)
+
+
+def run_audio_attack_sweep() -> list[AttackResult]:
+    """Run attacks against the complete PCM WAV embedding workflow."""
+
+    private_key, public_key = generate_keypair()
+    _, wrong_public_key = generate_keypair()
+    bits = 1
+    start = 37
+    results: list[AttackResult] = []
+
+    cover = _make_audio_cover()
+    stego, _ = audio_stego.embed(
+        cover,
+        "ORIGINAL",
+        private_key,
+        bits=bits,
+        start=start,
+        media_id="AUDIO001",
+    )
+
+    verification = audio_stego.extract(
+        stego, public_key, bits=bits, start=start
+    )
+    results.append(
+        _result(
+            "AUDIO-POS-01",
+            "baseline_valid_stego_audio",
+            True,
+            verification["authentic"],
+            f"Valid signed payload extracted from WAV; verdict={verification['verdict']}.",
+            is_attack=False,
+        )
+    )
+
+    envelope = _read_audio_envelope(stego, bits, start)
+    original_signature = base64.b64decode(
+        envelope["signature"], validate=True
+    )
+
+    corrupted_payload = copy.deepcopy(envelope["payload"])
+    corrupted_payload["metadata"]["message"] = "ATTACKER"
+    corrupted_payload_audio = _replace_audio_packet(
+        stego,
+        corrupted_payload,
+        original_signature,
+        bits,
+        start,
+    )
+    verification = audio_stego.extract(
+        corrupted_payload_audio, public_key, bits=bits, start=start
+    )
+    results.append(
+        _result(
+            "AUDIO-NEG-01",
+            "embedded_payload_corruption",
+            False,
+            verification["authentic"],
+            f"Changed the signed audio message while retaining its signature; verdict={verification['verdict']}.",
+        )
+    )
+
+    verification = audio_stego.extract(
+        stego, wrong_public_key, bits=bits, start=start
+    )
+    results.append(
+        _result(
+            "AUDIO-NEG-02",
+            "wrong_public_key",
+            False,
+            verification["authentic"],
+            f"Used an unrelated RSA public key; verdict={verification['verdict']}.",
+        )
+    )
+
+    damaged_signature = bytearray(original_signature)
+    damaged_signature[-1] ^= 0xFF
+    corrupted_signature_audio = _replace_audio_packet(
+        stego,
+        envelope["payload"],
+        bytes(damaged_signature),
+        bits,
+        start,
+    )
+    verification = audio_stego.extract(
+        corrupted_signature_audio, public_key, bits=bits, start=start
+    )
+    results.append(
+        _result(
+            "AUDIO-NEG-03",
+            "embedded_signature_corruption",
+            False,
+            verification["authentic"],
+            f"Corrupted the embedded RSA signature; verdict={verification['verdict']}.",
+        )
+    )
+
+    verification = audio_stego.extract(
+        stego, public_key, bits=bits, start=start + 1
+    )
+    results.append(
+        _result(
+            "AUDIO-NEG-04",
+            "wrong_start_location",
+            False,
+            verification["authentic"],
+            f"Extracted one sample after the correct start; verdict={verification['verdict']}.",
+        )
+    )
+
+    tampered_audio = audio_stego.tamper(stego)
+    verification = audio_stego.extract(
+        tampered_audio, public_key, bits=bits, start=start
+    )
+    results.append(
+        _result(
+            "AUDIO-NEG-05",
+            "audio_sample_tampering",
+            False,
+            verification["authentic"],
+            f"Changed a PCM bit outside the embedded payload; verdict={verification['verdict']}.",
+        )
+    )
+
+    oversized_rejected = False
+    rejection_message = "No capacity error was raised."
+    try:
+        audio_stego.embed(
+            _make_audio_cover(samples=100),
+            "OVERSIZED",
+            private_key,
+            bits=bits,
+            start=0,
+            media_id="AUDIO-SMALL",
+        )
+    except ValueError as error:
+        oversized_rejected = True
+        rejection_message = str(error)
+
+    results.append(
+        _result(
+            "AUDIO-NEG-06",
+            "oversized_payload",
+            False,
+            not oversized_rejected,
+            f"Attempted to embed a signed packet in an undersized WAV; {rejection_message}",
+        )
+    )
+
+    return results
+
+
 def write_evidence(
     results: list[AttackResult],
     output_path: str | Path,
@@ -351,9 +592,11 @@ def write_evidence(
         "component": "attack_simulation",
         "components": sorted(
             {
-                "crypto_payload"
-                if result.test_id.startswith("CRYPTO-")
-                else "image_stego"
+                {
+                    "CRYPTO": "crypto_payload",
+                    "IMAGE": "image_stego",
+                    "AUDIO": "audio_stego",
+                }[result.test_id.split("-", 1)[0]]
                 for result in results
             }
         ),
@@ -384,12 +627,16 @@ def build_evidence_path(
 
 
 def main() -> int:
-    results = run_crypto_attack_sweep() + run_image_attack_sweep()
+    results = (
+        run_crypto_attack_sweep()
+        + run_image_attack_sweep()
+        + run_audio_attack_sweep()
+    )
     generated_at = datetime.now(SINGAPORE_TIMEZONE)
     output_path = build_evidence_path(generated_at)
     write_evidence(results, output_path, generated_at)
 
-    print("Crypto and image attack simulation")
+    print("Crypto, image and audio attack simulation")
     print("=" * 90)
     for result in results:
         status = "PASS" if result.passed else "SECURITY GAP"

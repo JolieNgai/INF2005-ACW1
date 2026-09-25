@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Attack Simulation</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/attack_simulation.css') }}">
+</head>
+<body>
+<div class="container attack-page">
+    <nav>
+        <a href="{{ url_for('main.index') }}">Home</a> ·
+        <a href="{{ url_for('main.image_stego_page') }}">Image Steganography</a> ·
+        <a href="{{ url_for('audio.index') }}">Audio Steganography</a>
+    </nav>
+
+    <header class="page-header">
+        <h1>Security Attack Simulation</h1>
+        <p>Run reproducible negative-case tests across crypto, image and audio modules.</p>
+    </header>
+
+    <section class="card">
+        <h2>Attack sweep</h2>
+        <p class="description">
+            The sweep checks corrupted payloads, wrong public keys, corrupted
+            signatures, wrong start locations, media tampering and oversized payloads.
+        </p>
+        <form action="{{ url_for('attack.run') }}" method="post">
+            <button type="submit">Run Attack Simulation</button>
+        </form>
+        <p class="note">
+            Test PNG and WAV cover objects are generated automatically for reproducibility.
+        </p>
+    </section>
+
+    {% if summary %}
+    <section class="summary-grid" aria-label="Attack simulation summary">
+        <div class="summary-card"><span>Total scenarios</span><strong>{{ summary.total }}</strong></div>
+        <div class="summary-card success"><span>Passed expectations</span><strong>{{ summary.passed }}</strong></div>
+        <div class="summary-card {% if summary.failed %}failure{% endif %}"><span>Failed expectations</span><strong>{{ summary.failed }}</strong></div>
+        <div class="summary-card"><span>Attacks detected</span><strong>{{ summary.attacks_detected }}</strong></div>
+    </section>
+
+    <section class="card">
+        <div class="result-heading">
+            <div>
+                <h2>Results</h2>
+                <p class="note">Generated: {{ generated_at }}</p>
+            </div>
+            <div class="download-actions">
+                <a class="download-link" href="{{ url_for('attack.download_evidence_csv', filename=evidence_filename) }}">
+                    Download CSV Evidence
+                </a>
+                <a class="download-link secondary" href="{{ url_for('attack.download_evidence', filename=evidence_filename) }}">
+                    Download JSON Evidence
+                </a>
+            </div>
+        </div>
+
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Test ID</th>
+                        <th>Scenario</th>
+                        <th>Expected</th>
+                        <th>Actual</th>
+                        <th>Result</th>
+                        <th>Evidence</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for result in results %}
+                    <tr>
+                        <td><code>{{ result.test_id }}</code></td>
+                        <td>{{ result.attack | replace('_', ' ') }}</td>
+                        <td>{{ 'Verified' if result.expected_verification else 'Rejected' }}</td>
+                        <td>{{ 'Verified' if result.actual_verification else 'Rejected' }}</td>
+                        <td>
+                            <span class="status {{ 'pass' if result.passed else 'gap' }}">
+                                {{ 'PASS' if result.passed else 'SECURITY GAP' }}
+                            </span>
+                        </td>
+                        <td>{{ result.evidence }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+</div>
+</body>
+</html>
