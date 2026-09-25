@@ -25,8 +25,14 @@ from app.crypto_payload import (
     stable_hash,
     verify_payload,
 )
-from app.image_stego import embed_payload, extract_payload
+from app.image_stego import check_capacity, embed_payload, extract_payload
 from app.verdict import Verdict
+
+from app.start_location import (
+    CarrierSpec,
+    WrongStartLocationError,
+    extract_units,
+)
 
 
 SINGAPORE_TIMEZONE = timezone(timedelta(hours=8), name="SGT")
@@ -64,6 +70,10 @@ def _result(
         evidence=evidence,
     )
 
+def _verdict_text(verdict: Verdict | str) -> str:
+    """Return a printable verdict for enums and plain strings."""
+
+    return verdict.value if isinstance(verdict, Verdict) else str(verdict)
 
 def run_crypto_attack_sweep() -> list[AttackResult]:
     """Run attacks that only depend on the standalone crypto module."""
@@ -76,6 +86,7 @@ def run_crypto_attack_sweep() -> list[AttackResult]:
     signature = sign_payload(private_key, payload)
     results: list[AttackResult] = []
 
+    # Positive baseline: verify the unchanged payload with its matching key.
     verified = verify_payload(public_key, payload, signature)
     results.append(
         _result(
@@ -88,6 +99,7 @@ def run_crypto_attack_sweep() -> list[AttackResult]:
         )
     )
 
+    # Payload corruption: change signed metadata while retaining its signature.
     tampered_payload = copy.deepcopy(payload)
     tampered_payload["metadata"]["team"] = "ATTACKER"
     verified = verify_payload(public_key, tampered_payload, signature)
@@ -101,6 +113,7 @@ def run_crypto_attack_sweep() -> list[AttackResult]:
         )
     )
 
+    # Wrong key: verify the signature using an unrelated public key.
     verified = verify_payload(wrong_public_key, payload, signature)
     results.append(
         _result(
@@ -112,6 +125,7 @@ def run_crypto_attack_sweep() -> list[AttackResult]:
         )
     )
 
+    # Signature corruption: flip bits in the signature before verification.
     corrupted_signature = bytearray(signature)
     corrupted_signature[-1] ^= 0xFF
     verified = verify_payload(public_key, payload, bytes(corrupted_signature))
@@ -168,7 +182,7 @@ def _verify_image(
     start_key: str,
     bits: int,
     public_key,
-) -> tuple[Verdict, dict | None]:
+) -> tuple[Verdict | str, dict | None]:
     return run_verification(
         stego_path=image_path,
         key=start_key,
@@ -206,6 +220,7 @@ def run_image_attack_sweep() -> list[AttackResult]:
             bits,
         )
 
+        # Positive baseline: verify an unchanged signed stego image.
         verdict, _ = _verify_image(
             baseline_path, correct_start_key, bits, public_key
         )
@@ -214,12 +229,13 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 "IMAGE-POS-01",
                 "baseline_valid_stego_image",
                 True,
-                verdict is Verdict.AUTHENTIC,
-                f"Valid stego image verification; verdict={verdict.value}.",
+                verdict == Verdict.AUTHENTIC,
+                f"Valid stego image verification; verdict={_verdict_text(verdict)}.",
                 is_attack=False,
             )
         )
 
+        # Payload corruption: change metadata but retain its original signature.
         corrupted_payload = copy.deepcopy(payload)
         corrupted_payload["metadata"]["team"] = "ATTACKER"
         corrupted_payload_path = workdir / "corrupted_payload.png"
@@ -238,11 +254,12 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 "IMAGE-NEG-01",
                 "embedded_payload_corruption",
                 False,
-                verdict is Verdict.AUTHENTIC,
-                f"Changed signed metadata while retaining its signature; verdict={verdict.value}.",
+                verdict == Verdict.AUTHENTIC,
+                f"Changed signed metadata while retaining its signature; verdict={_verdict_text(verdict)}.",
             )
         )
 
+        # Wrong key: verify the image using an unrelated RSA public key.
         verdict, _ = _verify_image(
             baseline_path, correct_start_key, bits, wrong_public_key
         )
@@ -251,11 +268,12 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 "IMAGE-NEG-02",
                 "wrong_public_key",
                 False,
-                verdict is Verdict.AUTHENTIC,
-                f"Used an unrelated RSA public key; verdict={verdict.value}.",
+                verdict == Verdict.AUTHENTIC,
+                f"Used an unrelated RSA public key; verdict={_verdict_text(verdict)}.",
             )
         )
 
+        # Signature corruption: damage the signature embedded in the image.
         damaged_signature = bytearray(signature)
         damaged_signature[-1] ^= 0xFF
         damaged_signature_path = workdir / "corrupted_signature.png"
@@ -274,11 +292,12 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 "IMAGE-NEG-03",
                 "embedded_signature_corruption",
                 False,  # Expected authentication result
-                verdict is Verdict.AUTHENTIC,  # Actual result evaluated at runtime
-                f"Corrupted the embedded signature; verdict={verdict.value}.",
+                verdict == Verdict.AUTHENTIC,  # Actual result evaluated at runtime
+                f"Corrupted the embedded signature; verdict={_verdict_text(verdict)}.",
             )
         )
 
+        # Wrong start secret: derive the extraction location with another key.
         verdict, _ = _verify_image(
             baseline_path, wrong_start_key, bits, public_key
         )
@@ -287,11 +306,12 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 "IMAGE-NEG-04",
                 "wrong_start_location",
                 False,
-                verdict is Verdict.AUTHENTIC,
-                f"Derived extraction position using the wrong key; verdict={verdict.value}.",
+                verdict == Verdict.AUTHENTIC,
+                f"Derived extraction position using the wrong key; verdict={_verdict_text(verdict)}.",
             )
         )
 
+        # Pixel tampering: change a non-LSB bit after embedding.
         tampered_path = workdir / "tampered_pixels.png"
         stego_image = Image.open(baseline_path).convert("RGB")
         pixels = bytearray(stego_image.tobytes())
@@ -307,19 +327,58 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 "IMAGE-NEG-05",
                 "cover_pixel_tampering",
                 False,
-                verdict is Verdict.AUTHENTIC,
-                f"Changed a non-LSB cover-image bit; verdict={verdict.value}.",
+                verdict == Verdict.AUTHENTIC,
+                f"Changed a non-LSB cover-image bit; verdict={_verdict_text(verdict)}.",
             )
         )
 
-        maximum_payload_bytes = (96 * 96 * 3 * bits // 8) - 4
+        # Oversized payload: find the actual maximum capacity using the
+        # current authenticated-framing implementation.
+        with Image.open(cover_path) as cover_image:
+            width, height = cover_image.size
+
+        channels = 3  # embed_payload() converts the image to RGB.
+
+        # Binary search for the largest payload accepted by check_capacity().
+        lowest = 0
+        highest = width * height * channels
+
+        while lowest < highest:
+            candidate = (lowest + highest + 1) // 2
+
+            fits, _ = check_capacity(
+                width,
+                height,
+                channels,
+                candidate,
+                bits,
+            )
+
+            if fits:
+                lowest = candidate
+            else:
+                highest = candidate - 1
+
+        maximum_payload_bytes = lowest
+        oversized_payload = b"X" * (maximum_payload_bytes + 1)
+
+        # Confirm that the capacity checker rejects one byte over the limit.
+        fits, capacity_message = check_capacity(
+            width,
+            height,
+            channels,
+            len(oversized_payload),
+            bits,
+        )
+
         oversized_rejected = False
         rejection_message = "No capacity error was raised."
+
         try:
             embed_payload(
                 str(cover_path),
                 str(workdir / "oversized.png"),
-                b"X" * (maximum_payload_bytes + 1),
+                oversized_payload,
                 correct_start_key,
                 bits,
             )
@@ -332,8 +391,97 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 "IMAGE-NEG-06",
                 "oversized_payload",
                 False,
-                not oversized_rejected,
-                f"Exceeded calculated image capacity by one byte; {rejection_message}",
+                fits or not oversized_rejected,
+                (
+                    f"Maximum accepted payload={maximum_payload_bytes} bytes; "
+                    f"attempted={len(oversized_payload)} bytes; "
+                    f"capacity_check_fits={fits}; "
+                    f"capacity_check={capacity_message}; "
+                    f"embed_result={rejection_message}"
+                ),
+            )
+        )
+
+        # Read the valid stego image as RGB channel units. This uses the same
+        # image dimensions and LSB setting that were used during embedding.
+        with Image.open(baseline_path) as source:
+            baseline_image = source.convert("RGB")
+
+        carrier_spec = CarrierSpec.image(
+            *baseline_image.size,
+            bits=bits,
+        )
+        stego_units = baseline_image.tobytes()
+
+        # Force extraction to use index zero. Index zero belongs to the fixed
+        # bootstrap region, so it cannot be the derived payload start location.
+        wrong_index_accepted = False
+        wrong_index_evidence = (
+            "No WrongStartLocationError was raised for the supplied index."
+        )
+
+        try:
+            extract_units(
+                stego_units,
+                correct_start_key,
+                carrier_spec,
+                start_index=0,
+            )
+            wrong_index_accepted = True
+        except WrongStartLocationError as error:
+            wrong_index_evidence = str(error)
+
+        results.append(
+            _result(
+                "IMAGE-NEG-07",
+                "explicit_wrong_start_index",
+                False,
+                wrong_index_accepted,
+                (
+                    "Forced extraction at index 0 instead of the keyed derived "
+                    f"payload location; {wrong_index_evidence}"
+                ),
+            )
+        )
+
+        # Flip one LSB inside the fixed bootstrap header. The bootstrap contains
+        # the nonce, payload length and header HMAC, so this modification should
+        # be rejected before the payload is trusted.
+        damaged_bootstrap_units = bytearray(stego_units)
+        damaged_bootstrap_units[0] ^= 0x01
+
+        damaged_bootstrap_path = workdir / "damaged_bootstrap.png"
+        Image.frombytes(
+            "RGB",
+            baseline_image.size,
+            bytes(damaged_bootstrap_units),
+        ).save(damaged_bootstrap_path, "PNG")
+
+        damaged_bootstrap_accepted = False
+        bootstrap_evidence = (
+            "No WrongStartLocationError was raised after bootstrap tampering."
+        )
+
+        try:
+            extract_payload(
+                str(damaged_bootstrap_path),
+                correct_start_key,
+                bits,
+            )
+            damaged_bootstrap_accepted = True
+        except WrongStartLocationError as error:
+            bootstrap_evidence = str(error)
+
+        results.append(
+            _result(
+                "IMAGE-NEG-08",
+                "bootstrap_header_tampering",
+                False,
+                damaged_bootstrap_accepted,
+                (
+                    "Flipped one embedded LSB in the authenticated bootstrap "
+                    f"header; {bootstrap_evidence}"
+                ),
             )
         )
 
@@ -434,6 +582,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
     start = 37
     results: list[AttackResult] = []
 
+    # Positive baseline: embed and verify an unchanged signed WAV payload.
     cover = _make_audio_cover()
     stego, _ = audio_stego.embed(
         cover,
@@ -463,6 +612,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
         envelope["signature"], validate=True
     )
 
+    # Payload corruption: modify the message but retain its original signature.
     corrupted_payload = copy.deepcopy(envelope["payload"])
     corrupted_payload["metadata"]["message"] = "ATTACKER"
     corrupted_payload_audio = _replace_audio_packet(
@@ -485,6 +635,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
         )
     )
 
+    # Wrong key: verify the audio using an unrelated RSA public key.
     verification = audio_stego.extract(
         stego, wrong_public_key, bits=bits, start=start
     )
@@ -498,6 +649,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
         )
     )
 
+    # Signature corruption: damage the RSA signature embedded in the WAV.
     damaged_signature = bytearray(original_signature)
     damaged_signature[-1] ^= 0xFF
     corrupted_signature_audio = _replace_audio_packet(
@@ -507,6 +659,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
         bits,
         start,
     )
+    
     verification = audio_stego.extract(
         corrupted_signature_audio, public_key, bits=bits, start=start
     )
@@ -520,6 +673,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
         )
     )
 
+    # Wrong start location: extract one sample after the correct position.
     verification = audio_stego.extract(
         stego, public_key, bits=bits, start=start + 1
     )
@@ -533,6 +687,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
         )
     )
 
+    # Audio tampering: modify a PCM bit outside the embedded packet.
     tampered_audio = audio_stego.tamper(stego)
     verification = audio_stego.extract(
         tampered_audio, public_key, bits=bits, start=start
@@ -547,6 +702,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
         )
     )
 
+    # Oversized payload: confirm an undersized WAV rejects the packet.
     oversized_rejected = False
     rejection_message = "No capacity error was raised."
     try:

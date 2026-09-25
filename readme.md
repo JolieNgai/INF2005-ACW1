@@ -269,6 +269,8 @@ verification result in a timestamped JSON evidence report.
 - Wrong start-location key
 - Cover-image pixel tampering
 - Oversized payload rejection
+- Explicit wrong start-index extraction
+- Authenticated bootstrap-header tampering
 
 **Audio-steganography tests:**
 - Valid stego-audio baseline
@@ -279,7 +281,7 @@ verification result in a timestamped JSON evidence report.
 - Audio-sample tampering
 - Oversized payload rejection
 
-The suite currently runs 18 scenarios: 3 positive baselines and 15 negative cases.
+The suite currently runs 20 scenarios: 3 positive baselines and 17 negative cases.
 
 **Run from the website:**
 

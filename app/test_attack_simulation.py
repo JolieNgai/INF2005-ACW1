@@ -17,6 +17,7 @@ def _by_id(results):
 def test_crypto_attack_sweep_detects_supported_attacks():
     results = _by_id(run_crypto_attack_sweep())
 
+    # A valid payload must verify successfully.
     assert results["CRYPTO-POS-01"].actual_verification is True
     assert results["CRYPTO-POS-01"].passed is True
 
@@ -33,9 +34,11 @@ def test_crypto_attack_sweep_detects_supported_attacks():
 def test_image_attack_sweep_detects_supported_attacks():
     results = _by_id(run_image_attack_sweep())
 
+    # An unchanged stego image must remain authentic.
     assert results["IMAGE-POS-01"].actual_verification is True
     assert results["IMAGE-POS-01"].passed is True
 
+    # Every image attack must be rejected and reported as detected.
     for test_id in (
         "IMAGE-NEG-01",
         "IMAGE-NEG-02",
@@ -43,6 +46,8 @@ def test_image_attack_sweep_detects_supported_attacks():
         "IMAGE-NEG-04",
         "IMAGE-NEG-05",
         "IMAGE-NEG-06",
+        "IMAGE-NEG-07",
+        "IMAGE-NEG-08",
     ):
         assert results[test_id].actual_verification is False
         assert results[test_id].attack_detected is True
@@ -52,9 +57,11 @@ def test_image_attack_sweep_detects_supported_attacks():
 def test_audio_attack_sweep_detects_supported_attacks():
     results = _by_id(run_audio_attack_sweep())
 
+    # An unchanged stego WAV must remain authentic.
     assert results["AUDIO-POS-01"].actual_verification is True
     assert results["AUDIO-POS-01"].passed is True
 
+    # Every audio attack must be rejected and reported as detected.
     for test_id in (
         "AUDIO-NEG-01",
         "AUDIO-NEG-02",
@@ -97,6 +104,8 @@ def test_write_evidence_creates_combined_json_report(tmp_path):
         "IMAGE-NEG-04",
         "IMAGE-NEG-05",
         "IMAGE-NEG-06",
+        "IMAGE-NEG-07",
+        "IMAGE-NEG-08",
         "AUDIO-POS-01",
         "AUDIO-NEG-01",
         "AUDIO-NEG-02",
