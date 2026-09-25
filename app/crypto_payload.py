@@ -84,7 +84,7 @@ def run_verification(stego_path, key, bits, public_key, unpack_payload_fn, extra
         img = Image.open(stego_path).convert("RGB")
         extracted_bytes = extract_payload_fn(stego_path, key, bits_per_channel=bits)
     except WrongStartLocationError:
-        return "Wrong Start Location", None
+        return Verdict.WRONG_START_LOCATION, None
     except Exception:
         return Verdict.CANNOT_VERIFY, None
 

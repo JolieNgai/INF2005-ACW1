@@ -17,4 +17,4 @@ def verdict_from_exception(exc: Exception) -> tuple[Verdict, str]:
     so routes never leak a raw traceback to the user."""
     if isinstance(exc, NotImplementedError):
         return Verdict.CANNOT_VERIFY, f"Feature not yet implemented: {exc}"
-    return Verdict.CANNOT_VERIFY, f"Unexpected error during verification: {exc}"
+    return Verdict.CANNOT_VERIFY, f"Unexpected error: {exc}"

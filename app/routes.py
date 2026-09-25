@@ -11,8 +11,6 @@ from .crypto_payload import (
 )
 from .image_stego import check_capacity, embed_payload, extract_payload
 
-from .verdict import Verdict, verdict_from_exception
-
 load_dotenv()
 
 bp = Blueprint('main', __name__)
@@ -119,11 +117,11 @@ def embed():
 
     ok, err = validate_upload(file, ('.png',))
     if not ok:
-        return err, 400
+        return render_template('image_stego.html', error=err), 400
 
     bits, err = validate_bits(request.form.get('bits_per_channel'))
     if bits is None:
-        return err, 400
+        return render_template('image_stego.html', error=err), 400
 
     cover_path = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(cover_path)
@@ -144,7 +142,7 @@ def embed():
 
     fits, msg = check_capacity(width, height, 3, len(data_to_embed), bits)
     if not fits:
-        return f"Capacity error: {msg}", 400
+        return render_template('image_stego.html', error=f"Capacity error: {msg}"), 400
 
     stego_filename = f"stego_{file.filename}"
     stego_path = os.path.join(UPLOAD_FOLDER, stego_filename)
@@ -165,11 +163,11 @@ def verify():
 
     ok, err = validate_upload(file, ('.png',))
     if not ok:
-        return err, 400
+        return render_template('image_stego.html', error=err), 400
 
     bits, err = validate_bits(request.form.get('bits_per_channel'))
     if bits is None:
-        return err, 400
+        return render_template('image_stego.html', error=err), 400
 
     verify_path = os.path.join(UPLOAD_FOLDER, f"verify_{file.filename}")
     file.save(verify_path)
@@ -195,8 +193,3 @@ def verify():
         extracted_payload=payload,
         bits=bits,
     )
-
-@bp.errorhandler(Exception)
-def handle_unexpected_error(e):
-    verdict, explanation = verdict_from_exception(e)
-    return render_template('home.html', error=explanation, verdict=verdict.value), 500
