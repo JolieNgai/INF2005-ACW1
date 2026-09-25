@@ -167,7 +167,7 @@ def _read(units, byte_count, spec, start, bootstrap=False):
     return bytes(result)
 
 
-def embed_units(units: Sequence[int], payload: bytes, key, spec: CarrierSpec) -> list[int]:
+def embed_units(units: Sequence[int], payload: bytes, key, spec: CarrierSpec, *, demo_log=None) -> list[int]:
     """Return a modified copy of RGB channels or signed/unsigned PCM samples."""
     if len(units) != spec.total_units:
         raise ValueError("carrier length does not match specification")
@@ -176,15 +176,21 @@ def embed_units(units: Sequence[int], payload: bytes, key, spec: CarrierSpec) ->
     output = list(units)
     _write(output, header, spec, 0, bootstrap=True)
     _write(output, payload + tag, spec, start)
+    if demo_log:
+        demo_log(f"ENCODER | nonce={header[4:20].hex()} | media={spec.media} | "
+                 f"LSBs={spec.bits_per_unit} | derived start index={start} (zero-based)")
     return output
 
 
-def extract_units(units: Sequence[int], key, spec: CarrierSpec, *, start_index=None) -> bytes:
+def extract_units(units: Sequence[int], key, spec: CarrierSpec, *, start_index=None, demo_log=None) -> bytes:
     """Recover and authenticate data. Optional explicit index detects wrong starts."""
     if len(units) != spec.total_units or required_units(0, spec) > spec.total_units:
         raise WrongStartLocationError("Wrong Start Location: carrier missing or too small")
     header = _read(units, HEADER_BYTES, spec, 0, bootstrap=True)
     start, length = recover_start_location(key, spec, header)
+    if demo_log:
+        demo_log(f"DECODER | nonce={header[4:20].hex()} | media={spec.media} | "
+                 f"LSBs={spec.bits_per_unit} | recovered start index={start} (zero-based)")
     if start_index is not None and start_index != start:
         raise WrongStartLocationError("Wrong Start Location: supplied index differs from derived index")
     frame = _read(units, length + TAG_BYTES, spec, start)
@@ -192,4 +198,17 @@ def extract_units(units: Sequence[int], key, spec: CarrierSpec, *, start_index=N
     expected = _mac(key, b"payload", spec, header + start.to_bytes(32, "big") + payload)
     if not hmac.compare_digest(tag, expected):
         raise WrongStartLocationError("Wrong Start Location: payload authentication failed (or tampered data)")
+    if demo_log:
+        demo_log("RECOVERY | PASS: payload authentication succeeded at recovered index")
+        # Demonstration only: read a neighbouring index, leaving the real
+        # extraction result and carrier unchanged. Do not bypass normal checks.
+        wrong = spec.header_units + (start - spec.header_units + 1) % (
+            spec.total_units - spec.header_units)
+        wrong_frame = _read(units, length + TAG_BYTES, spec, wrong)
+        wrong_expected = _mac(key, b"payload", spec,
+                              header + wrong.to_bytes(32, "big") + wrong_frame[:-TAG_BYTES])
+        valid = hmac.compare_digest(wrong_frame[-TAG_BYTES:], wrong_expected)
+        result = "UNEXPECTED authentication success" if valid else "Wrong Start Location: HMAC rejected"
+        demo_log(f"WRONG-INDEX EXPERIMENT | attempted index={wrong} | {result} | "
+                 "demo experiment only; actual upload recovery succeeded")
     return payload
