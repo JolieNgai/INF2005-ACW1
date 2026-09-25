@@ -10,7 +10,7 @@
 <body>
 
 <div class="container">
-
+<nav><a href="{{ url_for('main.index') }}">Home</a> · <a href="{{ url_for('audio.index') }}">Audio Steganography</a></nav>
     <header class="page-header">
         <h1>INF2005 Image Steganography</h1>
         <p>Embed and verify data inside PNG images using LSB steganography.</p>
@@ -138,6 +138,15 @@
     </section>
 
 </div>
+
+<script>
+document.querySelectorAll('form').forEach(form => {
+  form.addEventListener('submit', () => {
+    const btn = form.querySelector('button[type="submit"], button:not([type])');
+    if (btn) { btn.disabled = true; btn.textContent = 'Processing...'; }
+  });
+});
+</script>
 
 </body>
 </html>

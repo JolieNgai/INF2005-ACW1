@@ -1,12 +1,53 @@
 <!DOCTYPE html>
-<html>
-<head><title>INF2005 ACW1</title></head>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>INF2005 ACW1 — Steganographic Integrity Verification</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
 <body>
-    <h1>Steganographic Integrity Verification</h1>
-    <ul>
-        <li><a href="/image">Image Steganography</a></li>
-        <li><a href="{{ url_for('audio.index') }}">Audio Steganography</a></li>
-        <li><a href="{{ url_for('attack.index') }}">Attack Simulation</a></li>
-    </ul>
+
+<div class="container">
+
+    <header class="page-header">
+        <h1>INF2005 Steganographic Image and Audio Integrity Verification</h1>
+        <p>Hide a signed verification payload inside a cover file, then check whether it's authentic or tampered.</p>
+    </header>
+
+    {% if error %}
+    <div class="message error">
+        <strong>{{ verdict or "Error" }}:</strong> {{ error }}
+    </div>
+    {% endif %}
+
+    <section class="card">
+        <h2>Image Steganography</h2>
+        <p class="description">
+            Embed a signed payload into a PNG cover image using LSB replacement, then extract
+            and verify it to check authenticity.
+        </p>
+        <a class="download-link" href="{{ url_for('main.image_stego_page') }}">Open Image Workflow</a>
+    </section>
+
+    <section class="card">
+        <h2>Audio Steganography</h2>
+        <p class="description">
+            Embed a signed message into a PCM WAV cover audio file using LSB replacement, then
+            extract and verify it to check authenticity.
+        </p>
+        <a class="download-link" href="{{ url_for('audio.index') }}">Open Audio Workflow</a>
+    </section>
+
+    <section class="card">
+        <h2>Attack Simulation</h2>
+        <p class="description">
+            Simulate an attack.
+        </p>
+        <a class="download-link" href="{{ url_for('attack.index') }}">Open Attack Simulation</a>
+    </section>
+
+</div>
+
 </body>
 </html>

@@ -7,6 +7,7 @@ import struct
 import wave
 
 from .crypto_payload import build_payload, sign_payload, verify_payload
+from .verdict import Verdict
 
 HEADER = struct.Struct('>4sI')
 MAGIC = b'ASG1'
@@ -100,7 +101,7 @@ def _extract_bytes(frames, width, bits, start, count):
 def extract(wav_bytes, public_key, bits=1, start=0):
     params, frames = read_wav(wav_bytes)
     available = _capacity(params, bits, start)
-    missing = {'authentic': False, 'verdict': 'Payload missing, damaged, or wrong bits/start location'}
+    missing = {'authentic': False, 'verdict': Verdict.PAYLOAD_MISSING.value}
     if available < HEADER.size:
         return missing
     header = _extract_bytes(frames, params.sampwidth, bits, start, HEADER.size)
@@ -113,14 +114,15 @@ def extract(wav_bytes, public_key, bits=1, start=0):
         payload = envelope['payload']
         signature = base64.b64decode(envelope['signature'], validate=True)
         if not isinstance(payload, dict) or not verify_payload(public_key, payload, signature):
-            return {'authentic': False, 'verdict': 'Signature invalid'}
+            return {'authentic': False, 'verdict': Verdict.SIGNATURE_INVALID.value}
         expected = _audio_hash(params, frames, bits, start, len(packet)).hex()
         valid = (payload['hash'] == expected and payload['metadata']['bits'] == bits
                  and payload['metadata']['start'] == start)
-        return {'authentic': valid, 'verdict': 'Authentic' if valid else 'Tampered audio',
+        return {'authentic': valid,
+                'verdict': Verdict.AUTHENTIC.value if valid else Verdict.TAMPERED.value,
                 'payload': payload}
     except (ValueError, KeyError, TypeError, UnicodeError):
-        return {'authentic': False, 'verdict': 'Invalid or damaged payload'}
+        return {'authentic': False, 'verdict': Verdict.CANNOT_VERIFY.value}
 
 
 def tamper(wav_bytes):

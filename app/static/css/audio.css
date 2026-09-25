@@ -17,4 +17,11 @@
 }
 .audio-page .download-link { margin: 12px 12px 0 0; }
 .audio-page button:disabled { opacity: 0.6; cursor: wait; }
-.audio-page #error { color: #a12626; }
+.audio-page #error:not(:empty) {
+    padding: 14px 18px;
+    margin-bottom: 25px;
+    border-radius: 8px;
+    background: #fdecec;
+    border: 1px solid #f5b5b5;
+    color: #a12626;
+}

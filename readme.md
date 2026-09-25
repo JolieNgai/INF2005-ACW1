@@ -45,17 +45,17 @@ at `/audio`. Both workflows use the persistent RSA keys in `app/keys/`.
 ```
 INF2005-ACW1/
 ├── app/
-│   ├── __init__.py       # Flask app factory
-│   ├── routes.py         # Home/image routes and persistent RSA keys
-│   ├── audio_routes.py   # Audio page, embed/extract, capacity and tamper endpoints
-|   ├── attack_routes.py  # Attack page, sweep execution and evidence downloads
-│   ├── crypto_payload.py # Hashing, payload building, signing/verification
-│   ├── image_stego.py    # PNG LSB embed/extract logic
-│   ├── audio_stego.py    # PCM WAV LSB embedding and audio verification
-│   ├── audio_demo.py     # Generate sample WAVs and verification evidence
-│   ├── attack_simulation.py # Automated security attack simulation
-│   ├── verdict.py        # Shared verdict vocabulary and error mapping
-│   ├── validation.py     # Shared upload/input validation helpers
+│   ├── __init__.py           # Flask app factory, blueprint registration, app-level error handler
+│   ├── routes.py             # Home/image routes and persistent RSA keys
+│   ├── audio_routes.py       # Audio page, embed/extract, capacity and tamper endpoints
+|   ├── attack_routes.py      # Attack page, sweep execution and evidence downloads
+│   ├── crypto_payload.py     # Hashing, payload building, signing/verification
+│   ├── image_stego.py        # PNG LSB embed/extract logic
+│   ├── audio_stego.py        # PCM WAV LSB embedding and audio verification
+│   ├── audio_demo.py         # Generate sample WAVs and verification evidence
+│   ├── attack_simulation.py  # Automated security attack simulation
+│   ├── verdict.py            # Shared verdict vocabulary and error mapping
+│   ├── validation.py         # Shared upload/input validation helpers
 │   ├── test_audio_stego.py
 │   ├── test_crypto_payload.py
 │   ├── test_attack_simulation.py
@@ -231,22 +231,28 @@ Handles payload construction, hashing, signing, and signature verification.
 docker compose exec web python -m app.crypto_payload
 ```
 
-## Orchestration & Error Handling (app/verdict.py, app/routes.py)
+## Orchestration & Error Handling (app/verdict.py, app/__init__.py)
 
 - `Verdict` enum defines the six verdict categories from FR10, used as the shared
-  vocabulary across modules:
+  vocabulary across image and audio:
   - `Authentic` — signature valid, hash matches
   - `Tampered` — signature valid, hash mismatch
   - `Signature Invalid` — signature check fails
   - `Payload Missing` — no payload could be extracted
   - `Wrong Start Location` — extraction at the derived offset yields no valid payload
   - `Cannot Verify` — unsupported file, missing dependency module, or unexpected error
-- `verdict_from_exception(exc)` maps unexpected exceptions (including calls to
-  not-yet-implemented modules) to `Cannot Verify` with an explanation, instead of
-  leaking a raw stack trace to the user.
-- A blueprint-level error handler in `routes.py` catches any unhandled exception raised
-  inside a route and renders it via `home.html` with a clear error message, so the app
-  stays usable instead of showing a raw traceback.
+- `verdict_from_exception(exc)` maps unexpected exceptions to `Cannot Verify` with
+  an explanation, instead of leaking a raw stack trace to the user.
+- An app-level error handler in `__init__.py` catches any unhandled exception from
+  any blueprint (image, audio, or home) and returns either a styled HTML error page
+  or a JSON error response depending on the request path, so the app stays usable
+  instead of showing a raw traceback.
+- Client-side state management (disabling submit buttons during a request, showing
+  a processing state) is implemented for both the image workflow (inline script in
+  `image_stego.html`) and the audio workflow (`audio.js`).
+- Shared input validation (`app/validation.py`) is used on the image routes to
+  reject invalid/missing files and out-of-range LSB values before they reach the
+  stego modules.
 
 ## Attack Simulation Module (`app/attack_simulation.py`)
 
