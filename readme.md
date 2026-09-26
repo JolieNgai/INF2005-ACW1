@@ -200,13 +200,35 @@ Open http://localhost:8080/audio, or select **Audio Steganography** on the home 
 5. Under **Tampered-audio negative case**, upload that same stego WAV, click
    **Create tampered WAV**, and download `tampered.wav`. This changes one audio sample.
 6. Verify `tampered.wav` using the same key and settings. Expect
-   `"authentic": false` and `"verdict": "Tampered audio"`. If a change damages the
+   `"authentic": false` and `"verdict": "Tampered"`. If a change damages the
    hidden packet itself, extraction or signature verification may fail instead.
 
 The hidden message can remain readable after audio tampering; this does not mean
 verification passed. Check the `authentic` flag and verdict. Keep each stego file
 with its matching public key, and capture both positive and negative results for
 demo evidence.
+
+### Audio demo utilities
+
+**Generate Wrong Public Key:** click the button and download
+`wrong-public-key.pem`. Verify a valid stego WAV with its correct original LSB
+count and start sample, but select this downloaded key to get **Signature Invalid**.
+Clear the key selection afterwards to use the server default, or upload the
+matching trusted key. Each click generates an independent RSA key pair in memory;
+only its public key is downloaded. The temporary private key is not saved or
+returned, and the server's signing keys are unchanged.
+
+
+**Generate "Tampered" Test File:** upload a valid stego WAV and click
+**Generate Test File**. Verify the download with the original settings and matching
+key. Use 16-, 24-, or 32-bit PCM for this demo: the changed high bit lies outside
+the hidden packet. With 8-bit PCM, the change may damage the packet instead.
+
+**Generate "Cannot Verify" Test File:** click **Generate Test File** with no upload.
+The app generates a fresh tone, embeds a signed packet, then deliberately damages
+its JSON structure while keeping its header intact. Download the WAV and verify
+with **1 LSB, start sample 100**, leaving the public-key field empty.
+These are controlled negative tests, not examples of every possible corruption.
 
 ### Generate sample audio
 
@@ -273,6 +295,27 @@ with the existing image workflow.
 - **Audio positive:** unmodified stego WAV with matching settings/key → Authentic.
 - **Audio negative:** sample modified after embedding → Tampered audio, or an
   extraction/signature failure if the hidden packet is damaged.
+
+### Audio wrong-start demo
+
+Embed a fresh WAV with **1 LSB, start sample 100**. Extract the downloaded stego
+WAV with **1 LSB, start sample 1**, using the matching trusted public key (or the
+server default when embedded on the same server). Expect **Wrong Start Location**.
+Change the extraction start back to **100** to obtain **Authentic**.
+
+When the requested position has no valid packet header, audio scans sample LSBs
+at the selected bit depth for another ASG1 packet. It reports Wrong Start Location
+only when that packet's RSA signature verifies and its signed start/LSB metadata
+matches the discovered position. A marker alone is not sufficient evidence.
+This preserves existing audio files and manual start selection; it does not
+implement the shared module's keyed start derivation or claim its innovation.
+
+If no signed packet is confirmed, the result remains **Payload Missing**. A wrong
+key, wrong LSB depth, or malformed payload can prevent confirmation. In particular,
+the deliberately malformed `cannot_verify.wav` still returns **Cannot Verify** at
+100 and **Payload Missing** at 1. Search is limited to 64 marker candidates and a
+cumulative packet-byte budget equal to the PCM byte length; an inconclusive search
+also returns Payload Missing. Out-of-range start values remain input errors.
 
 ## Known Limitations
 

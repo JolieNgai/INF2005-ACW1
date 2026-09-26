@@ -41,10 +41,32 @@
   <pre id="verdict" role="status"></pre>
 </section>
 <section class="card">
-  <h2>3. Tampered-audio negative case</h2>
-  <p>Upload the saved stego WAV. This changes one audio sample. Download the result and verify it above using the same public key, bits, and start sample; verification should fail.</p>
-  <form id="tamper"><label>Stego WAV <input type="file" name="audio" accept=".wav,audio/wav" required></label><button>Create tampered WAV</button></form>
-  <div id="tampered-download"></div>
+  <h2>Demo Utility: Generate &quot;Tampered&quot; Test File</h2>
+  <p class="description">Upload your stego WAV to deliberately change one audio sample and demonstrate the <strong>Tampered</strong> verdict. For this demo, use a valid 16-, 24-, or 32-bit PCM stego WAV so the change leaves the hidden payload intact. Your original file is unchanged.</p>
+  <form id="tamper">
+    <label>Stego WAV <input type="file" name="audio" accept=".wav,audio/wav" required></label>
+    <button type="submit">Generate Test File</button>
+  </form>
+  <div id="tampered-download" role="status"></div>
+  <p class="note">Download the generated file, then upload it under Extract and verify using the original LSB count, start sample, and matching public key. Expected verdict: <strong>Tampered</strong>. Damage to the hidden packet in 8-bit audio may produce a different failure verdict.</p>
+</section>
+<section class="card">
+  <h2>Demo Utility: Generate &quot;Cannot Verify&quot; Test File</h2>
+  <p class="description">This creates a fresh sample WAV, embeds a signed payload, then deliberately breaks the hidden JSON while keeping the packet header intact. The app can find the packet but cannot process its contents, demonstrating the <strong>Cannot Verify</strong> verdict. No upload is needed.</p>
+  <form id="cannot-verify-demo">
+    <button type="submit">Generate Test File</button>
+  </form>
+  <div id="corrupt-download" role="status"></div>
+  <p class="note">Download the generated file, then upload it under Extract and verify with <strong>1 LSB</strong> and <strong>start sample 100</strong>. Leave the public-key field empty. Expected verdict: <strong>Cannot Verify</strong>.</p>
+</section>
+<section class="card">
+  <h2>Demo Utility: Generate Wrong Public Key</h2>
+  <p class="description">Generate a separate valid RSA public key to demonstrate the <strong>Signature Invalid</strong> verdict. No upload is needed. The server's signing keys remain unchanged.</p>
+  <form id="wrong-key-demo">
+    <button type="submit">Generate Wrong Public Key</button>
+  </form>
+  <div id="wrong-key-download" role="status"></div>
+  <p class="note">Download wrong-public-key.pem. Under Extract and verify, upload your valid stego WAV and select this file as the Trusted public key. Use the correct original LSB count and start sample. Expected verdict: <strong>Signature Invalid</strong>. Afterwards, clear this key selection to use the server's default key, or upload the matching key.</p>
 </section>
 </div>
 <script src="{{ url_for('static', filename='audio.js') }}"></script>
