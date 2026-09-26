@@ -153,14 +153,40 @@
     </section>
 
     <section class="card">
+        <h2>Demo Utility: Generate "Signature Invalid" Test File</h2>
+        <p class="description">
+            This builds and signs a real payload normally, then deliberately corrupts
+            one byte of the signature before embedding, using the same embedding
+            pipeline as a normal embed. The result is a well-formed payload that
+            authenticates at the start-location layer and parses as valid JSON, but
+            whose signature no longer matches demonstrating the
+            <strong>Signature Invalid</strong> verdict. LSBs used when embedding : 1bit.
+        </p>
+        <form action="/generate-signature-invalid-test" method="post">
+            <button type="submit">Generate Test File</button>
+        </form>
+
+        {% if signature_invalid_test_file %}
+        <p>
+            Generated:
+            <a href="/uploads/{{ signature_invalid_test_file }}" download>{{ signature_invalid_test_file }}</a>
+        </p>
+        <p class="note">
+            Download this file, then upload it in the Verify section above
+            (LSBs per channel = {{ signature_invalid_test_bits }}).
+            Expected verdict: <strong>Signature Invalid</strong>.
+        </p>
+        {% endif %}
+    </section>
+
+    <section class="card">
         <h2>Demo Utility: Generate "Payload Missing" Test File</h2>
         <p class="description">
             This deliberately embeds non-payload junk bytes (not a real message) into a
             fresh test image, using the exact same embedding pipeline as a normal embed.
             The bytes authenticate correctly at the start-location layer, but fail to
-            parse as a valid payload. Demonstrating the <strong>Payload Missing</strong>
-            verdict. The generated file is then verified through the normal Verify flow
-            above, with no shortcuts in the verification logic itself.
+            parse as a valid payload demonstrating the <strong>Payload Missing</strong>
+            verdict. LSBs used when embedding : 1bit.
         </p>
         <form action="/generate-payload-missing-test" method="post">
             <button type="submit">Generate Test File</button>

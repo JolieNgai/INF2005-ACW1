@@ -204,10 +204,52 @@ def verify():
 
     return render_template(
         'image_stego.html',
-        verdict=verdict.value, 
+        verdict=verdict.value,   # .value gives the display string, e.g. "Authentic"
         extracted_payload=payload,
         bits=bits,
         verified_filename=file.filename,
+    )
+
+
+@bp.route('/generate-signature-invalid-test', methods=['POST'])
+def generate_signature_invalid_test():
+    """
+    Demo/test utility: builds and signs a real payload normally, then flips
+    one byte of the signature before packing and embedding it, using the
+    exact same embed_payload() pipeline as a normal embed. The result is a
+    well-formed JSON payload+signature package so it authenticates fine
+    at the start-location/HMAC layer and parses fine as JSON but the
+    signature itself no longer matches the payload, which is exactly what
+    triggers the Signature Invalid verdict on /verify.
+    """
+    cover_path = os.path.join(UPLOAD_FOLDER, "_tmp_cover_for_sig_invalid.png")
+    output_filename = "signature_invalid_test.png"
+    output_path = os.path.join(UPLOAD_FOLDER, output_filename)
+
+    dummy_cover = Image.new("RGB", (200, 200), color=(120, 130, 140))
+    dummy_cover.save(cover_path, "PNG")
+
+    test_bits = 1 #impt to use 1 bit in LSB when verifying
+
+    payload = build_payload(
+        media_id="signature_invalid_test.png",
+        cover_hash=stable_hash(dummy_cover.convert("RGB").tobytes(), test_bits),
+        metadata={"team": "P6-7", "bits_per_channel": test_bits, "message": "This signature will be corrupted."},
+    )
+    real_signature = sign_payload(PRIVATE_KEY, payload)
+
+    # Flip the last byte so the signature no longer matches the payload,
+    # while staying the same length (a structurally valid, but wrong, signature).
+    corrupted_signature = real_signature[:-1] + bytes([real_signature[-1] ^ 0xFF])
+
+    data_to_embed = pack_payload(payload, corrupted_signature)
+
+    embed_payload(cover_path, output_path, data_to_embed, SECRET_KEY_PHRASE, bits_per_channel=test_bits)
+
+    return render_template(
+        'image_stego.html',
+        signature_invalid_test_file=output_filename,
+        signature_invalid_test_bits=test_bits,
     )
 
 
@@ -220,7 +262,6 @@ def generate_payload_missing_test():
     correctly at the start-location/HMAC layer (so extraction succeeds), but
     fail to parse as a valid payload structure which is exactly what
     triggers the Payload Missing verdict on /verify.
-
     """
     cover_path = os.path.join(UPLOAD_FOLDER, "_tmp_cover_for_payload_missing.png")
     output_filename = "payload_missing_test.png"
