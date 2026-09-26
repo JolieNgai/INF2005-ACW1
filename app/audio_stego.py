@@ -98,15 +98,60 @@ def _extract_bytes(frames, width, bits, start, count):
     return bytes(result)
 
 
+def _signed_packet_elsewhere(params, frames, public_key, bits, start):
+    """Confirm a different location using signed metadata, not a magic match alone.
+
+    Scan only the selected LSB depth. Bound candidate decoding work for uploads
+    containing many forged headers; an inconclusive search returns False.
+    """
+    mask = (1 << bits) - 1
+    samples = frames[::params.sampwidth].translate(bytes(i & mask for i in range(256)))
+    marker = int.from_bytes(MAGIC, 'little')
+    prefix = bytes((marker >> offset) & mask for offset in range(0, 32 - bits + 1, bits))
+    position = -1
+    budget = len(frames)
+    for _ in range(64):
+        position = samples.find(prefix, position + 1)
+        if position < 0:
+            break
+        if position == start:
+            continue
+        available = (len(samples) - position) * bits // 8
+        if available < HEADER.size:
+            continue
+        header = _extract_bytes(frames, params.sampwidth, bits, position, HEADER.size)
+        magic, length = HEADER.unpack(header)
+        if magic != MAGIC or length > available - HEADER.size:
+            continue
+        size = HEADER.size + length
+        if size > budget:
+            return False
+        budget -= size
+        packet = _extract_bytes(frames, params.sampwidth, bits, position, size)
+        try:
+            envelope = json.loads(packet[HEADER.size:])
+            payload = envelope['payload']
+            signature = base64.b64decode(envelope['signature'], validate=True)
+            metadata = payload['metadata']
+            if (metadata['bits'] == bits and metadata['start'] == position
+                    and verify_payload(public_key, payload, signature)):
+                return True
+        except (ValueError, KeyError, TypeError, UnicodeError):
+            continue
+    return False
+
+
 def extract(wav_bytes, public_key, bits=1, start=0):
     params, frames = read_wav(wav_bytes)
     available = _capacity(params, bits, start)
     missing = {'authentic': False, 'verdict': Verdict.PAYLOAD_MISSING.value}
-    if available < HEADER.size:
-        return missing
-    header = _extract_bytes(frames, params.sampwidth, bits, start, HEADER.size)
-    magic, length = HEADER.unpack(header)
+    magic, length = b'', 0
+    if available >= HEADER.size:
+        header = _extract_bytes(frames, params.sampwidth, bits, start, HEADER.size)
+        magic, length = HEADER.unpack(header)
     if magic != MAGIC or length > available - HEADER.size:
+        if _signed_packet_elsewhere(params, frames, public_key, bits, start):
+            return {'authentic': False, 'verdict': Verdict.WRONG_START_LOCATION.value}
         return missing
     packet = _extract_bytes(frames, params.sampwidth, bits, start, HEADER.size + length)
     try:

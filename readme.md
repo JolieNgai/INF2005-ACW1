@@ -200,7 +200,7 @@ Open http://localhost:8080/audio, or select **Audio Steganography** on the home 
 5. Under **Tampered-audio negative case**, upload that same stego WAV, click
    **Create tampered WAV**, and download `tampered.wav`. This changes one audio sample.
 6. Verify `tampered.wav` using the same key and settings. Expect
-   `"authentic": false` and `"verdict": "Tampered audio"`. If a change damages the
+   `"authentic": false` and `"verdict": "Tampered"`. If a change damages the
    hidden packet itself, extraction or signature verification may fail instead.
 
 The hidden message can remain readable after audio tampering; this does not mean
@@ -273,6 +273,27 @@ with the existing image workflow.
 - **Audio positive:** unmodified stego WAV with matching settings/key → Authentic.
 - **Audio negative:** sample modified after embedding → Tampered audio, or an
   extraction/signature failure if the hidden packet is damaged.
+
+### Audio wrong-start demo
+
+Embed a fresh WAV with **1 LSB, start sample 100**. Extract the downloaded stego
+WAV with **1 LSB, start sample 1**, using the matching trusted public key (or the
+server default when embedded on the same server). Expect **Wrong Start Location**.
+Change the extraction start back to **100** to obtain **Authentic**.
+
+When the requested position has no valid packet header, audio scans sample LSBs
+at the selected bit depth for another ASG1 packet. It reports Wrong Start Location
+only when that packet's RSA signature verifies and its signed start/LSB metadata
+matches the discovered position. A marker alone is not sufficient evidence.
+This preserves existing audio files and manual start selection; it does not
+implement the shared module's keyed start derivation or claim its innovation.
+
+If no signed packet is confirmed, the result remains **Payload Missing**. A wrong
+key, wrong LSB depth, or malformed payload can prevent confirmation. In particular,
+the deliberately malformed `cannot_verify.wav` still returns **Cannot Verify** at
+100 and **Payload Missing** at 1. Search is limited to 64 marker candidates and a
+cumulative packet-byte budget equal to the PCM byte length; an inconclusive search
+also returns Payload Missing. Out-of-range start values remain input errors.
 
 ## Known Limitations
 

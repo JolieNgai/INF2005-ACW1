@@ -66,7 +66,7 @@ def test_negative_cases(keys):
     assert not extract(write_wav(params, changed), keys[1])['authentic']
     changed = bytearray(frames)
     changed[-2] ^= 1  # unused LSB must still be hashed
-    assert extract(write_wav(params, changed), keys[1])['verdict'] == 'Tampered audio'
+    assert extract(write_wav(params, changed), keys[1])['verdict'] == 'Tampered'
     assert not extract(write_wav(params._replace(framerate=8000), frames), keys[1])['authentic']
 
 
@@ -93,6 +93,32 @@ def test_exact_capacity(keys):
     assert extract(stego, keys[1], bits=8)['authentic']
     with pytest.raises(ValueError):
         embed(cover(samples=info['required_bytes'] - 1), 'boundary', keys[0], bits=8)
+
+
+@pytest.mark.parametrize('bits', range(1, 9))
+@pytest.mark.parametrize('width,channels', [(1, 1), (2, 2), (3, 1), (4, 2)])
+def test_wrong_start_is_distinct_from_missing(keys, bits, width, channels):
+    original = cover(width, channels)
+    stego, _ = embed(original, 'Location test', keys[0], bits, 100)
+    assert extract(stego, keys[1], bits, 100)['verdict'] == 'Authentic'
+    for wrong_start in (0, 1, 101, 16000 * channels - 1):
+        result = extract(stego, keys[1], bits, wrong_start)
+        assert result == {'authentic': False, 'verdict': 'Wrong Start Location'}
+    assert extract(original, keys[1], bits, 1)['verdict'] == 'Payload Missing'
+
+
+def test_location_detection_requires_trusted_signed_payload(keys):
+    stego, _ = embed(cover(), 'Location test', keys[0], 1, 100)
+    assert extract(stego, generate_keypair()[1], 1, 1)['verdict'] == 'Payload Missing'
+    assert extract(stego, keys[1], 2, 1)['verdict'] == 'Payload Missing'
+    params, frames = read_wav(stego)
+    changed = bytearray(frames)
+    # Preserve the header but zero the opening JSON byte.
+    for sample in range(164, 172):
+        changed[sample * params.sampwidth] &= 254
+    malformed = write_wav(params, changed)
+    assert extract(malformed, keys[1], 1, 100)['verdict'] == 'Cannot Verify'
+    assert extract(malformed, keys[1], 1, 1)['verdict'] == 'Payload Missing'
 
 
 @pytest.fixture
@@ -126,6 +152,11 @@ def test_web_workflow(client):
             'audio': (io.BytesIO(data), 'stego.wav'), 'bits': '2', 'start': '17',
             'public_key': (io.BytesIO(record['public_key'].encode()), 'key.pem')}).get_json()
     assert verify(stego)['authentic']
+    wrong_location = client.post('/audio/extract', data={
+        'audio': (io.BytesIO(stego), 'stego.wav'), 'bits': '2', 'start': '1',
+        'public_key': (io.BytesIO(record['public_key'].encode()), 'key.pem')})
+    assert wrong_location.status_code == 200
+    assert wrong_location.get_json()['verdict'] == 'Wrong Start Location'
     damaged = client.post('/audio/tamper', data={'audio': (io.BytesIO(stego), 'stego.wav')})
     assert damaged.status_code == 200
     assert not verify(damaged.data)['authentic']
@@ -172,7 +203,8 @@ def test_main_image_workflow_preserved(client):
     Image.new('RGB', (100, 100), (100, 150, 200)).save(output, format='PNG')
     output.seek(0)
     embedded = client.post('/embed', data={
-        'cover_image': (output, 'regression.png'), 'bits_per_channel': '1'})
+        'cover_image': (output, 'regression.png'), 'bits_per_channel': '1',
+        'message': 'Image regression test'})
     assert embedded.status_code == 200
     stego = client.get('/uploads/stego_regression.png')
     assert stego.status_code == 200
