@@ -27,6 +27,14 @@ class WrongStartLocationError(ValueError):
     """
 
 
+class PayloadMissingError(WrongStartLocationError):
+    """No recognizable frame at the selected LSB depth.
+
+    Wrong LSB settings or a damaged format marker can also cause this result.
+    Subclassing preserves callers that catch all location/recovery failures.
+    """
+
+
 @dataclass(frozen=True)
 class CarrierSpec:
     media: str
@@ -119,6 +127,8 @@ def recover_start_location(key, spec: CarrierSpec, header: bytes):
     """Decoder: authenticate before trusting length; return (index, length)."""
     if len(header) != HEADER_BYTES:
         raise WrongStartLocationError("Wrong Start Location: invalid bootstrap size")
+    if header[:len(MAGIC)] != MAGIC:
+        raise PayloadMissingError("Payload Missing: no recognizable embedded header")
     prefix, tag = header[:-TAG_BYTES], header[-TAG_BYTES:]
     if not hmac.compare_digest(tag, _mac(key, b"header", spec, prefix)):
         raise WrongStartLocationError("Wrong Start Location: bootstrap authentication failed")
@@ -184,8 +194,10 @@ def embed_units(units: Sequence[int], payload: bytes, key, spec: CarrierSpec, *,
 
 def extract_units(units: Sequence[int], key, spec: CarrierSpec, *, start_index=None, demo_log=None) -> bytes:
     """Recover and authenticate data. Optional explicit index detects wrong starts."""
-    if len(units) != spec.total_units or required_units(0, spec) > spec.total_units:
-        raise WrongStartLocationError("Wrong Start Location: carrier missing or too small")
+    if len(units) != spec.total_units:
+        raise WrongStartLocationError("Wrong Start Location: carrier length does not match settings")
+    if spec.total_units < spec.header_units:
+        raise PayloadMissingError("Payload Missing: carrier too small for an embedded header")
     header = _read(units, HEADER_BYTES, spec, 0, bootstrap=True)
     start, length = recover_start_location(key, spec, header)
     if demo_log:
