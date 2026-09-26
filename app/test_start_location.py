@@ -1,7 +1,7 @@
 import pytest
 from PIL import Image
 from app.start_location import (
-    CarrierSpec, HEADER_BYTES, WrongStartLocationError, derive_start_location,
+    CarrierSpec, HEADER_BYTES, PayloadMissingError, WrongStartLocationError, derive_start_location,
     select_start_location, recover_start_location, required_units,
     embed_units, extract_units,
 )
@@ -37,20 +37,22 @@ def test_header_tampering(offset):
     _, header = select_start_location(KEY, spec, 20)
     damaged = bytearray(header)
     damaged[offset] ^= 1
-    with pytest.raises(WrongStartLocationError):
+    with pytest.raises(PayloadMissingError if offset == 0 else WrongStartLocationError):
         recover_start_location(KEY, spec, bytes(damaged))
 
 
 def test_wrong_key_bits_metadata_and_explicit_start():
     spec = CarrierSpec.image(40, 40)
     encoded = embed_units([100] * spec.total_units, b"payload", KEY, spec)
-    for key, other_spec in [(b"wrong", spec), (KEY, CarrierSpec.image(40, 40, bits=2)),
+    for key, other_spec in [(b"wrong", spec),
                             (KEY, CarrierSpec.image(20, 80)),
                             (KEY, CarrierSpec.audio(2400, 2, 44100))]:
         with pytest.raises(WrongStartLocationError):
             extract_units(encoded, key, other_spec)
     with pytest.raises(WrongStartLocationError):
         extract_units(encoded, KEY, spec, start_index=0)
+    with pytest.raises(PayloadMissingError):
+        extract_units(encoded, KEY, CarrierSpec.image(40, 40, bits=2))
 
 
 def test_payload_tampering_and_forced_wraparound(monkeypatch):
@@ -75,7 +77,7 @@ def test_capacity_boundary_empty_and_missing(bits):
     with pytest.raises(ValueError, match="capacity"):
         embed_units([0] * count, b"x" * 11, KEY, spec)
     assert extract_units(embed_units([0] * count, b"", KEY, spec), KEY, spec) == b""
-    with pytest.raises(WrongStartLocationError):
+    with pytest.raises(PayloadMissingError):
         extract_units([0] * count, KEY, spec)
 
 
@@ -89,18 +91,38 @@ def test_png_integration(tmp_path, bits):
     assert extract_payload(output, KEY, bits) == payload
 
 
-def test_verification_verdict(tmp_path):
+@pytest.mark.parametrize("size", [(60, 60), (1, 1)])
+@pytest.mark.parametrize("bits", range(1, 9))
+def test_verification_verdict(tmp_path, size, bits):
     from app.crypto_payload import run_verification
     cover = tmp_path / "cover.png"
-    Image.new("RGB", (60, 60)).save(cover)
-    verdict, payload = run_verification(cover, KEY, 1, None, None, extract_payload)
-    assert (verdict, payload) == ("Wrong Start Location", None)
+    Image.new("RGB", size).save(cover)
+    verdict, payload = run_verification(cover, KEY, bits, None, None, extract_payload)
+    assert (verdict, payload) == ("Payload Missing", None)
 
 
 @pytest.mark.parametrize("bits", [0, -1, 9])
 def test_invalid_bits(bits):
     with pytest.raises(ValueError):
         CarrierSpec.image(40, 40, bits=bits)
+
+
+def test_web_verification_shows_missing_payload(tmp_path, monkeypatch):
+    from io import BytesIO
+    from app import create_app
+    monkeypatch.setenv("STEGO_SECRET_KEY", "missing-payload-test-key")
+    app = create_app()
+    from app import routes
+    monkeypatch.setattr(routes, "UPLOAD_FOLDER", str(tmp_path))
+    app.config.update(TESTING=True, START_LOCATION_DEMO=False)
+    image = BytesIO()
+    Image.new("RGB", (256, 256), (120, 130, 140)).save(image, "PNG")
+    image.seek(0)
+    response = app.test_client().post("/verify", data={
+        "stego_image": (image, "unembedded.png"), "bits_per_channel": "1",
+    })
+    assert response.status_code == 200
+    assert b"Payload Missing" in response.data
 
 
 @pytest.mark.parametrize("width", [8, 16, 24, 32])
