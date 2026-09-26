@@ -114,6 +114,7 @@ def get_upload(filename):
 @bp.route('/embed', methods=['POST'])
 def embed():
     file = request.files.get('cover_image')
+    message = request.form.get('message', '').strip()
 
     ok, err = validate_upload(file, ('.png',))
     if not ok:
@@ -122,6 +123,13 @@ def embed():
     bits, err = validate_bits(request.form.get('bits_per_channel'))
     if bits is None:
         return render_template('image_stego.html', error=err), 400
+
+    if not message:
+        return render_template(
+            'image_stego.html',
+            error="Please enter a message to hide",
+            bits=bits,
+        ), 400
 
     cover_path = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(cover_path)
@@ -135,14 +143,21 @@ def embed():
 
     width, height = img.size
     cover_hash = stable_hash(img.tobytes(), bits)
-    payload = build_payload(media_id=file.filename, cover_hash=cover_hash,
-                             metadata={"team": "P6-7", "bits_per_channel": bits})
+    payload = build_payload(
+        media_id=file.filename,
+        cover_hash=cover_hash,
+        metadata={
+            "team": "P6-7",
+            "bits_per_channel": bits,
+            "message": message,
+        },
+    )
     signature = sign_payload(PRIVATE_KEY, payload)
     data_to_embed = pack_payload(payload, signature)
 
     fits, msg = check_capacity(width, height, 3, len(data_to_embed), bits)
     if not fits:
-        return render_template('image_stego.html', error=f"Capacity error: {msg}"), 400
+        return render_template('image_stego.html', error=f"Capacity error: {msg}", bits=bits), 400
 
     stego_filename = f"stego_{file.filename}"
     stego_path = os.path.join(UPLOAD_FOLDER, stego_filename)
@@ -189,7 +204,38 @@ def verify():
 
     return render_template(
         'image_stego.html',
-        verdict=verdict.value,   # .value gives the display string, e.g. "Authentic"
+        verdict=verdict.value, 
         extracted_payload=payload,
         bits=bits,
+        verified_filename=file.filename,
+    )
+
+
+@bp.route('/generate-payload-missing-test', methods=['POST'])
+def generate_payload_missing_test():
+    """
+    Demo/test utility: embeds deliberately non-JSON junk bytes (not a real
+    payload+signature package) into a fresh cover image, using the exact same
+    embed_payload() pipeline as a normal embed. The bytes authenticate
+    correctly at the start-location/HMAC layer (so extraction succeeds), but
+    fail to parse as a valid payload structure which is exactly what
+    triggers the Payload Missing verdict on /verify.
+
+    """
+    cover_path = os.path.join(UPLOAD_FOLDER, "_tmp_cover_for_payload_missing.png")
+    output_filename = "payload_missing_test.png"
+    output_path = os.path.join(UPLOAD_FOLDER, output_filename)
+
+    dummy_cover = Image.new("RGB", (200, 200), color=(120, 130, 140))
+    dummy_cover.save(cover_path, "PNG")
+
+    junk_bytes = b"this is not a valid JSON payload package at all"
+    test_bits = 1
+
+    embed_payload(cover_path, output_path, junk_bytes, SECRET_KEY_PHRASE, bits_per_channel=test_bits)
+
+    return render_template(
+        'image_stego.html',
+        payload_missing_test_file=output_filename,
+        payload_missing_test_bits=test_bits,
     )
