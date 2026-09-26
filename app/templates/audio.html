@@ -4,7 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>INF2005 Audio steganography</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/audio.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/audio.css', v='3') }}">
 </head>
 <body>
 <div class="container audio-page">
@@ -33,7 +33,12 @@
   <h2>2. Extract and verify</h2>
   <form id="extract">
     <label>Stego WAV <input type="file" name="audio" accept=".wav,audio/wav" required></label>
-    <label>Trusted public key <input type="file" name="public_key" accept=".pem"></label>
+    <label for="public-key">Trusted public key</label>
+    <div class="public-key-controls">
+      <input id="public-key" type="file" name="public_key" accept=".pem">
+      <button type="button" id="clear-public-key">Remove public key</button>
+    </div>
+    <p class="note">Leave the public key empty to use the server's default key.</p>
     <label>LSBs used <select name="bits">{% for n in range(1,9) %}<option>{{ n }}</option>{% endfor %}</select></label>
     <label>Start sample used <input name="start" type="number" min="0" value="0" required></label>
     <button>Extract and verify</button>
@@ -48,7 +53,7 @@
     <button type="submit">Generate Test File</button>
   </form>
   <div id="tampered-download" role="status"></div>
-  <p class="note">Download the generated file, then upload it under Extract and verify using the original LSB count, start sample, and matching public key. Expected verdict: <strong>Tampered</strong>. Damage to the hidden packet in 8-bit audio may produce a different failure verdict.</p>
+  <p class="note">Download the generated file, then upload it under Extract and verify <strong>using the original LSB count, start sample, and matching public key.</strong> Expected verdict: <strong>Tampered</strong>. Damage to the hidden packet in 8-bit audio may produce a different failure verdict.</p>
 </section>
 <section class="card">
   <h2>Demo Utility: Generate &quot;Cannot Verify&quot; Test File</h2>
@@ -57,7 +62,7 @@
     <button type="submit">Generate Test File</button>
   </form>
   <div id="corrupt-download" role="status"></div>
-  <p class="note">Download the generated file, then upload it under Extract and verify with <strong>1 LSB</strong> and <strong>start sample 100</strong>. Leave the public-key field empty. Expected verdict: <strong>Cannot Verify</strong>.</p>
+  <p class="note">Download the generated file, then upload it under Extract and verify with <strong>1 LSB</strong> and <strong>start sample 100</strong>. <strong>Leave the public-key field empty.</strong> Expected verdict: <strong>Cannot Verify</strong>.</p>
 </section>
 <section class="card">
   <h2>Demo Utility: Generate Wrong Public Key</h2>
@@ -66,7 +71,7 @@
     <button type="submit">Generate Wrong Public Key</button>
   </form>
   <div id="wrong-key-download" role="status"></div>
-  <p class="note">Download wrong-public-key.pem. Under Extract and verify, upload your valid stego WAV and select this file as the Trusted public key. Use the correct original LSB count and start sample. Expected verdict: <strong>Signature Invalid</strong>. Afterwards, clear this key selection to use the server's default key, or upload the matching key.</p>
+  <p class="note">Download wrong-public-key.pem. Under Extract and verify, <strong>upload your valid stego WAV</strong> and <strong>select this file as the Trusted public key.</strong> <strong>Use the correct original LSB count and start sample.</strong> Expected verdict: <strong>Signature Invalid</strong>. Afterwards, clear this key selection to use the server's default key, or upload the matching key.</p>
 </section>
 </div>
 <script src="{{ url_for('static', filename='audio.js') }}"></script>

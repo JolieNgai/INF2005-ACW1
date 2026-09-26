@@ -46,6 +46,11 @@ byId('embed').onsubmit = event => {
     byId('extract').elements.start.value = event.target.elements.start.value;
   });
 };
+byId('clear-public-key').onclick = () => {
+  byId('extract').elements.public_key.value = '';
+  byId('verdict').textContent = '';
+  byId('error').textContent = '';
+};
 byId('extract').onsubmit = event => {
   event.preventDefault(); byId('verdict').textContent = '';
   perform(event.submitter, async () => {
