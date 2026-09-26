@@ -12,9 +12,7 @@ from .audio_stego import embed, extract, tamper
 from .crypto_payload import generate_keypair
 
 
-def main():
-    directory = Path('examples/audio')
-    directory.mkdir(parents=True, exist_ok=True)
+def demo_cover():
     output = io.BytesIO()
     with wave.open(output, 'wb') as wav:
         wav.setnchannels(1)
@@ -22,7 +20,13 @@ def main():
         wav.setframerate(44100)
         wav.writeframes(b''.join(struct.pack('<h', int(8000 * math.sin(2 * math.pi * 440 * i / 44100)))
                                  for i in range(44100 * 3)))
-    cover = output.getvalue()
+    return output.getvalue()
+
+
+def main():
+    directory = Path('examples/audio')
+    directory.mkdir(parents=True, exist_ok=True)
+    cover = demo_cover()
     private, public = generate_keypair()
     protected, sizes = embed(cover, 'Explain how steganography can be used to embed hidden verification data.',
                               private, bits=1, start=100)

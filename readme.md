@@ -208,6 +208,19 @@ verification passed. Check the `authentic` flag and verdict. Keep each stego fil
 with its matching public key, and capture both positive and negative results for
 demo evidence.
 
+### Audio demo utilities
+
+**Generate "Tampered" Test File:** upload a valid stego WAV and click
+**Generate Test File**. Verify the download with the original settings and matching
+key. Use 16-, 24-, or 32-bit PCM for this demo: the changed high bit lies outside
+the hidden packet. With 8-bit PCM, the change may damage the packet instead.
+
+**Generate "Cannot Verify" Test File:** click **Generate Test File** with no upload.
+The app generates a fresh tone, embeds a signed packet, then deliberately damages
+its JSON structure while keeping its header intact. Download the WAV and verify
+with **1 LSB, start sample 100**, leaving the public-key field empty.
+These are controlled negative tests, not examples of every possible corruption.
+
 ### Generate sample audio
 
 With the Docker stack running:

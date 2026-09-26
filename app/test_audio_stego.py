@@ -220,3 +220,67 @@ def test_audio_upload_limit_matches_main_proxy(client):
         'audio': (io.BytesIO(cover()), 'large.wav')})
     assert response.status_code == 413
     assert '20 MiB' in response.get_json()['error']
+
+
+
+@pytest.mark.parametrize('bits', range(1, 9))
+@pytest.mark.parametrize('width,channels', [(1, 1), (2, 2), (3, 1), (4, 2)])
+def test_corrupt_payload_preserves_header_and_other_bits(keys, bits, width, channels):
+    from app.audio_stego import corrupt_payload, _extract_bytes, HEADER
+    stego, _ = embed(cover(width, channels), 'Fresh audio', keys[0], bits, 200)
+    damaged = corrupt_payload(stego, bits, 200)
+    params, before = read_wav(stego)
+    after_params, after = read_wav(damaged)
+    assert params == after_params
+    assert extract(damaged, keys[1], bits, 200)['verdict'] == 'Cannot Verify'
+    assert extract(stego, keys[1], bits, 200)['verdict'] == 'Authentic'
+    assert _extract_bytes(before, width, bits, 200, HEADER.size) == _extract_bytes(after, width, bits, 200, HEADER.size)
+    allowed = {}
+    for offset in range(64, 72):
+        index = (200 + offset // bits) * width
+        allowed[index] = allowed.get(index, 0) | (1 << (offset % bits))
+    for index, (a, b) in enumerate(zip(before, after)):
+        assert (a ^ b) & (255 ^ allowed.get(index, 0)) == 0
+    with pytest.raises(ValueError):
+        corrupt_payload(damaged, bits, 200)
+
+
+def test_corrupt_payload_web_workflow(client):
+    import base64
+    response = client.post('/audio/embed', data={
+        'audio': (io.BytesIO(cover()), 'fresh.wav'), 'message': 'Fresh message',
+        'bits': '3', 'start': '200'})
+    stego = base64.b64decode(response.get_json()['audio'])
+    response = client.post('/audio/corrupt-payload', data={
+        'audio': (io.BytesIO(stego), 'stego.wav'), 'bits': '3', 'start': '200'})
+    assert response.status_code == 200
+    assert response.mimetype == 'audio/wav'
+    assert 'cannot_verify.wav' in response.headers['Content-Disposition']
+    verified = client.post('/audio/extract', data={
+        'audio': (io.BytesIO(response.data), 'cannot_verify.wav'),
+        'bits': '3', 'start': '200'})
+    assert verified.get_json()['verdict'] == 'Cannot Verify'
+    for audio, bits, start in [(stego, 3, 1), (stego, 1, 200),
+                               (cover(), 1, 0), (b'bad', 1, 0),
+                               (stego, 9, 200), (stego, 3, -1)]:
+        bad = client.post('/audio/corrupt-payload', data={
+            'audio': (io.BytesIO(audio), 'test.wav'),
+            'bits': str(bits), 'start': str(start)})
+        assert bad.status_code == 400
+    assert client.post('/audio/corrupt-payload').status_code == 400
+    page = client.get('/audio').data
+    assert b'cannot-verify-demo' in page
+    assert b'Generate demo test files' not in page
+
+
+def test_generated_cannot_verify_demo(client):
+    response = client.post('/audio/generate-cannot-verify-test')
+    assert response.status_code == 200
+    assert response.mimetype == 'audio/wav'
+    assert 'cannot_verify.wav' in response.headers['Content-Disposition']
+    params, _ = read_wav(response.data)
+    assert params.sampwidth == 2
+    result = client.post('/audio/extract', data={
+        'audio': (io.BytesIO(response.data), 'cannot_verify.wav'),
+        'bits': '1', 'start': '100'})
+    assert result.get_json() == {'authentic': False, 'verdict': 'Cannot Verify'}

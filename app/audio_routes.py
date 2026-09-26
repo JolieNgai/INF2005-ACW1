@@ -30,6 +30,10 @@ def process(action):
                              as_attachment=True, download_name='tampered.wav')
         bits = int(request.form.get('bits', '1'))
         start = int(request.form.get('start', '0'))
+        if action == 'corrupt-payload':
+            damaged = audio_stego.corrupt_payload(data, bits, start)
+            return send_file(io.BytesIO(damaged), mimetype='audio/wav',
+                             as_attachment=True, download_name='cannot_verify.wav')
         if action == 'capacity':
             return jsonify(capacity_bytes=audio_stego.capacity(data, bits, start))
         if action == 'embed':
@@ -55,3 +59,13 @@ def process(action):
         return jsonify(error='Unsupported public key. Use an RSA PEM public key.'), 400
     except (ValueError, TypeError) as exc:
         return jsonify(error=str(exc)), 400
+
+
+@bp.post('/generate-cannot-verify-test')
+def generate_cannot_verify_test():
+    from .audio_demo import demo_cover
+    stego, _ = audio_stego.embed(demo_cover(), 'Cannot Verify demonstration',
+                                main_routes.PRIVATE_KEY, bits=1, start=100)
+    damaged = audio_stego.corrupt_payload(stego, bits=1, start=100)
+    return send_file(io.BytesIO(damaged), mimetype='audio/wav',
+                     as_attachment=True, download_name='cannot_verify.wav')

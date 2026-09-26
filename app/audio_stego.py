@@ -170,6 +170,32 @@ def extract(wav_bytes, public_key, bits=1, start=0):
         return {'authentic': False, 'verdict': Verdict.CANNOT_VERIFY.value}
 
 
+def corrupt_payload(wav_bytes, bits=1, start=0):
+    """Make a Cannot Verify fixture by zeroing only the first JSON byte."""
+    params, frames = read_wav(wav_bytes)
+    available = _capacity(params, bits, start)
+    error = 'No valid packet at these settings. Use the original stego WAV, LSB count and start sample.'
+    if available < HEADER.size:
+        raise ValueError(error)
+    header = _extract_bytes(frames, params.sampwidth, bits, start, HEADER.size)
+    magic, length = HEADER.unpack(header)
+    if magic != MAGIC or not 0 < length <= available - HEADER.size:
+        raise ValueError(error)
+    packet = _extract_bytes(frames, params.sampwidth, bits, start, HEADER.size + length)
+    try:
+        envelope = json.loads(packet[HEADER.size:])
+        if not isinstance(envelope['payload'], dict) or not isinstance(envelope['signature'], str):
+            raise ValueError('Invalid payload')
+    except (ValueError, TypeError, KeyError) as exc:
+        raise ValueError('The hidden payload is already malformed. Upload an uncorrupted stego WAV.') from exc
+    changed = bytearray(frames)
+    # Absolute bit offsets handle byte boundaries crossing samples at 3/5/6/7 LSBs.
+    for offset in range(HEADER.size * 8, (HEADER.size + 1) * 8):
+        index = (start + offset // bits) * params.sampwidth
+        changed[index] &= 255 ^ (1 << (offset % bits))
+    return write_wav(params, changed)
+
+
 def tamper(wav_bytes):
     """Change a PCM bit outside the low byte for a reproducible negative demo."""
     params, frames = read_wav(wav_bytes)
