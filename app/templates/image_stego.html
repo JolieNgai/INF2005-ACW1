@@ -25,7 +25,7 @@
     <section class="card">
         <h2>Embed Payload</h2>
         <p class="description">
-            Upload a PNG image and choose the number of LSBs to use.
+            Upload a PNG image, type the message you want to hide, and choose the number of LSBs to use.
         </p>
 
         <form action="/embed" method="post" enctype="multipart/form-data">
@@ -38,6 +38,15 @@
                 accept=".png"
                 required
             >
+
+            <label for="message">Message to hide</label>
+            <textarea
+                id="message"
+                name="message"
+                rows="4"
+                placeholder="Enter the verification message to embed..."
+                required
+            ></textarea>
 
             <label for="embed_bits">LSBs per channel</label>
             <select id="embed_bits" name="bits_per_channel">
@@ -126,15 +135,74 @@
         {% if verdict %}
         <div class="verdict">
             <h3>Verification Result</h3>
+            {% if verified_filename %}
+            <p><strong>File checked:</strong> {{ verified_filename }}</p>
+            {% endif %}
             <p><strong>Verdict:</strong> {{ verdict }}</p>
 
             {% if extracted_payload %}
             <h4>Extracted Payload</h4>
+            {% if extracted_payload.metadata and extracted_payload.metadata.message %}
+            <p><strong>Message:</strong> {{ extracted_payload.metadata.message }}</p>
+            {% endif %}
             <pre>{{ extracted_payload }}</pre>
             {% endif %}
         </div>
         {% endif %}
 
+    </section>
+
+    <section class="card">
+        <h2>Demo Utility: Generate "Signature Invalid" Test File</h2>
+        <p class="description">
+            This builds and signs a real payload normally, then deliberately corrupts
+            one byte of the signature before embedding, using the same embedding
+            pipeline as a normal embed. The result is a well-formed payload that
+            authenticates at the start-location layer and parses as valid JSON, but
+            whose signature no longer matches demonstrating the
+            <strong>Signature Invalid</strong> verdict. LSBs used when embedding : 1bit.
+        </p>
+        <form action="/generate-signature-invalid-test" method="post">
+            <button type="submit">Generate Test File</button>
+        </form>
+
+        {% if signature_invalid_test_file %}
+        <p>
+            Generated:
+            <a href="/uploads/{{ signature_invalid_test_file }}" download>{{ signature_invalid_test_file }}</a>
+        </p>
+        <p class="note">
+            Download this file, then upload it in the Verify section above
+            (LSBs per channel = {{ signature_invalid_test_bits }}).
+            Expected verdict: <strong>Signature Invalid</strong>.
+        </p>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <h2>Demo Utility: Generate "Payload Missing" Test File</h2>
+        <p class="description">
+            This deliberately embeds non-payload junk bytes (not a real message) into a
+            fresh test image, using the exact same embedding pipeline as a normal embed.
+            The bytes authenticate correctly at the start-location layer, but fail to
+            parse as a valid payload demonstrating the <strong>Payload Missing</strong>
+            verdict. LSBs used when embedding : 1bit.
+        </p>
+        <form action="/generate-payload-missing-test" method="post">
+            <button type="submit">Generate Test File</button>
+        </form>
+
+        {% if payload_missing_test_file %}
+        <p>
+            Generated:
+            <a href="/uploads/{{ payload_missing_test_file }}" download>{{ payload_missing_test_file }}</a>
+        </p>
+        <p class="note">
+            Download this file, then upload it in the Verify section above
+            (LSBs per channel = {{ payload_missing_test_bits }}).
+            Expected verdict: <strong>Payload Missing</strong>.
+        </p>
+        {% endif %}
     </section>
 
 </div>
