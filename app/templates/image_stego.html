@@ -93,9 +93,20 @@
                 Download Stego Image
             </a>
 
+            <a
+                class="download-link"
+                href="/public-key"
+                download
+            >
+                Download My Public Key
+            </a>
+
             <p class="note">
                 Embedded using {{ bits }} bit(s) per channel.
-                Upload the downloaded stego image below to verify it independently.
+                Send both files to the verifier. They need your public key to confirm
+                the signature is really yours, not to keep it secret.
+                Upload the downloaded stego image (and this public key, if verifying
+                on a different machine) below to verify it independently.
             </p>
 
         </div>
@@ -121,6 +132,18 @@
                 required
             >
 
+            <label for="signer_public_key">Signer's Public Key (.pem) — optional</label>
+            <input
+                type="file"
+                id="signer_public_key"
+                name="signer_public_key"
+                accept=".pem"
+            >
+            <p class="hint">
+                Leave blank to verify against this server's own key (same-machine testing only).
+                For a real cross-machine check, upload the .pem the sender gave you.
+            </p>
+
             <label for="verify_bits">LSBs used when embedding</label>
             <select id="verify_bits" name="bits_per_channel">
                 {% for i in range(1, 9) %}
@@ -139,6 +162,13 @@
             <p><strong>File checked:</strong> {{ verified_filename }}</p>
             {% endif %}
             <p><strong>Verdict:</strong> {{ verdict }}</p>
+            <p><strong>Key used:</strong>
+                {% if used_own_key %}
+                This server's own public key (same-machine test)
+                {% else %}
+                Uploaded signer public key
+                {% endif %}
+            </p>
 
             {% if extracted_payload %}
             <h4>Extracted Payload</h4>
@@ -160,7 +190,7 @@
             pipeline as a normal embed. The result is a well-formed payload that
             authenticates at the start-location layer and parses as valid JSON, but
             whose signature no longer matches demonstrating the
-            <strong>Signature Invalid</strong> verdict. LSBs used when embedding : 1bit.
+            <strong>Signature Invalid</strong> verdict. <strong>LSBs used when embedding : 1bit.</strong>
         </p>
         <form action="/generate-signature-invalid-test" method="post">
             <button type="submit">Generate Test File</button>
@@ -186,7 +216,7 @@
             fresh test image, using the exact same embedding pipeline as a normal embed.
             The bytes authenticate correctly at the start-location layer, but fail to
             parse as a valid payload demonstrating the <strong>Payload Missing</strong>
-            verdict. LSBs used when embedding : 1bit.
+            verdict. <strong>LSBs used when embedding : 1bit.</strong>
         </p>
         <form action="/generate-payload-missing-test" method="post">
             <button type="submit">Generate Test File</button>
