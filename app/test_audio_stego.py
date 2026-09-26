@@ -284,3 +284,37 @@ def test_generated_cannot_verify_demo(client):
         'audio': (io.BytesIO(response.data), 'cannot_verify.wav'),
         'bits': '1', 'start': '100'})
     assert result.get_json() == {'authentic': False, 'verdict': 'Cannot Verify'}
+
+def test_wrong_public_key_demo(client):
+    import base64
+    from app import routes
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    original_private = routes.PRIVATE_KEY
+    original_public = routes.PUBLIC_KEY
+    keys = []
+    for _ in range(2):
+        response = client.post('/audio/generate-wrong-public-key')
+        assert response.status_code == 200
+        assert 'wrong-public-key.pem' in response.headers['Content-Disposition']
+        assert b'PRIVATE KEY' not in response.data
+        public = serialization.load_pem_public_key(response.data)
+        assert isinstance(public, rsa.RSAPublicKey)
+        assert public.public_numbers() != original_public.public_numbers()
+        keys.append(response.data)
+    assert keys[0] != keys[1]
+    assert routes.PRIVATE_KEY is original_private
+    assert routes.PUBLIC_KEY is original_public
+    record = client.post('/audio/embed', data={
+        'audio': (io.BytesIO(cover()), 'fresh.wav'), 'message': 'Wrong key demo',
+        'bits': '1', 'start': '100'}).get_json()
+    stego = base64.b64decode(record['audio'])
+    for key, expected in [(keys[0], 'Signature Invalid'), (None, 'Authentic')]:
+        data = {'audio': (io.BytesIO(stego), 'stego.wav'), 'bits': '1', 'start': '100'}
+        if key is not None:
+            data['public_key'] = (io.BytesIO(key), 'wrong-public-key.pem')
+        result = client.post('/audio/extract', data=data)
+        assert result.status_code == 200
+        assert result.get_json()['verdict'] == expected
+    assert b'wrong-key-demo' in client.get('/audio').data

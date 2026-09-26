@@ -69,3 +69,13 @@ def generate_cannot_verify_test():
     damaged = audio_stego.corrupt_payload(stego, bits=1, start=100)
     return send_file(io.BytesIO(damaged), mimetype='audio/wav',
                      as_attachment=True, download_name='cannot_verify.wav')
+
+
+@bp.post('/generate-wrong-public-key')
+def generate_wrong_public_key():
+    # Temporary independent pair: never replace or save the server's keys.
+    temporary_private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = temporary_private.public_key().public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    return send_file(io.BytesIO(pem), mimetype='application/x-pem-file',
+                     as_attachment=True, download_name='wrong-public-key.pem')

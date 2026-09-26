@@ -59,6 +59,15 @@
   <div id="corrupt-download" role="status"></div>
   <p class="note">Download the generated file, then upload it under Extract and verify with <strong>1 LSB</strong> and <strong>start sample 100</strong>. Leave the public-key field empty. Expected verdict: <strong>Cannot Verify</strong>.</p>
 </section>
+<section class="card">
+  <h2>Demo Utility: Generate Wrong Public Key</h2>
+  <p class="description">Generate a separate valid RSA public key to demonstrate the <strong>Signature Invalid</strong> verdict. No upload is needed. The server's signing keys remain unchanged.</p>
+  <form id="wrong-key-demo">
+    <button type="submit">Generate Wrong Public Key</button>
+  </form>
+  <div id="wrong-key-download" role="status"></div>
+  <p class="note">Download wrong-public-key.pem. Under Extract and verify, upload your valid stego WAV and select this file as the Trusted public key. Use the correct original LSB count and start sample. Expected verdict: <strong>Signature Invalid</strong>. Afterwards, clear this key selection to use the server's default key, or upload the matching key.</p>
+</section>
 </div>
 <script src="{{ url_for('static', filename='audio.js') }}"></script>
 </body></html>

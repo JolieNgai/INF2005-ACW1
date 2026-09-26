@@ -16,7 +16,7 @@ async function post(action, form) {
     const result = await response.json().catch(() => ({}));
     throw new Error(result.error || `Request failed (${response.status})`);
   }
-  return ['tamper', 'generate-cannot-verify-test'].includes(action) ? response.blob() : response.json();
+  return ['tamper', 'generate-cannot-verify-test', 'generate-wrong-public-key'].includes(action) ? response.blob() : response.json();
 }
 async function perform(button, task) {
   byId('error').textContent = ''; button.disabled = true;
@@ -67,5 +67,14 @@ byId('cannot-verify-demo').onsubmit = event => {
   perform(event.submitter, async () => {
     const blob = await post('generate-cannot-verify-test', event.target);
     download(byId('corrupt-download'), 'cannot_verify.wav', blob);
+  });
+};
+
+byId('wrong-key-demo').onsubmit = event => {
+  event.preventDefault();
+  byId('wrong-key-download').replaceChildren();
+  perform(event.submitter, async () => {
+    const blob = await post('generate-wrong-public-key', event.target);
+    download(byId('wrong-key-download'), 'wrong-public-key.pem', blob);
   });
 };

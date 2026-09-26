@@ -210,6 +210,15 @@ demo evidence.
 
 ### Audio demo utilities
 
+**Generate Wrong Public Key:** click the button and download
+`wrong-public-key.pem`. Verify a valid stego WAV with its correct original LSB
+count and start sample, but select this downloaded key to get **Signature Invalid**.
+Clear the key selection afterwards to use the server default, or upload the
+matching trusted key. Each click generates an independent RSA key pair in memory;
+only its public key is downloaded. The temporary private key is not saved or
+returned, and the server's signing keys are unchanged.
+
+
 **Generate "Tampered" Test File:** upload a valid stego WAV and click
 **Generate Test File**. Verify the download with the original settings and matching
 key. Use 16-, 24-, or 32-bit PCM for this demo: the changed high bit lies outside
