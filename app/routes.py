@@ -198,16 +198,8 @@ def verify():
     verify_path = os.path.join(UPLOAD_FOLDER, f"verify_{file.filename}")
     file.save(verify_path)
 
-    try:
-        img = Image.open(verify_path)
-        img.verify()
-    except Exception:
-        return render_template('image_stego.html', error="Invalid or corrupted PNG image", bits=bits), 400
-
     # Determine which public key to verify against.
-    # If the verifier uploaded a signer's public key, use that (this is the
-    # cross-machine case: Party B trusts a specific key they received from
-    # Party A, not whatever key happens to be on B's own server).
+    # If the verifier uploaded a signer's public key, use that (this is the cross-machine case: Party B trusts a specific key they received from Party A, not whatever key happens to be on B's own server).
     # Otherwise fall back to this instance's own key, for same-machine testing.
     if pubkey_file and pubkey_file.filename:
         try:
