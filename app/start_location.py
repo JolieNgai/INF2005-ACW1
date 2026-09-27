@@ -7,7 +7,7 @@ This authenticates embedded data; it neither encrypts it nor authenticates all
 unused carrier samples. See start_location_notes.md for the security boundary.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hmac
 import json
 import secrets
@@ -24,6 +24,15 @@ class WrongStartLocationError(ValueError):
     """Wrong location/key/settings, missing frame, or modified embedded data.
 
     These causes cannot be reliably distinguished from authentication failure.
+    """
+
+
+class PayloadMissingError(WrongStartLocationError):
+    """No recognizable frame at the selected LSB depth.
+
+    A damaged marker or wrong settings combined with a wrong key can also cause
+    this result. Extraction probes other depths before reporting a missing frame.
+    Subclassing preserves callers that catch all location/recovery failures.
     """
 
 
@@ -119,6 +128,8 @@ def recover_start_location(key, spec: CarrierSpec, header: bytes):
     """Decoder: authenticate before trusting length; return (index, length)."""
     if len(header) != HEADER_BYTES:
         raise WrongStartLocationError("Wrong Start Location: invalid bootstrap size")
+    if header[:len(MAGIC)] != MAGIC:
+        raise PayloadMissingError("Payload Missing: no recognizable embedded header")
     prefix, tag = header[:-TAG_BYTES], header[-TAG_BYTES:]
     if not hmac.compare_digest(tag, _mac(key, b"header", spec, prefix)):
         raise WrongStartLocationError("Wrong Start Location: bootstrap authentication failed")
@@ -184,10 +195,33 @@ def embed_units(units: Sequence[int], payload: bytes, key, spec: CarrierSpec, *,
 
 def extract_units(units: Sequence[int], key, spec: CarrierSpec, *, start_index=None, demo_log=None) -> bytes:
     """Recover and authenticate data. Optional explicit index detects wrong starts."""
-    if len(units) != spec.total_units or required_units(0, spec) > spec.total_units:
-        raise WrongStartLocationError("Wrong Start Location: carrier missing or too small")
-    header = _read(units, HEADER_BYTES, spec, 0, bootstrap=True)
-    start, length = recover_start_location(key, spec, header)
+    if len(units) != spec.total_units:
+        raise WrongStartLocationError("Wrong Start Location: carrier length does not match settings")
+    try:
+        if spec.total_units < spec.header_units:
+            raise PayloadMissingError("Payload Missing: carrier too small for an embedded header")
+        header = _read(units, HEADER_BYTES, spec, 0, bootstrap=True)
+        start, length = recover_start_location(key, spec, header)
+    except PayloadMissingError:
+        # Read only the fixed-size header at other depths. Require its HMAC
+        # and capacity checks to pass: a magic-byte coincidence is not evidence.
+        # Diagnose the setting mismatch without silently extracting at another depth.
+        for bits in range(1, min(8, spec.unit_width) + 1):
+            if bits == spec.bits_per_unit:
+                continue
+            candidate = replace(spec, bits_per_unit=bits)
+            if candidate.total_units < candidate.header_units:
+                continue
+            candidate_header = _read(units, HEADER_BYTES, candidate, 0, bootstrap=True)
+            try:
+                recover_start_location(key, candidate, candidate_header)
+            except WrongStartLocationError:
+                continue
+            raise WrongStartLocationError(
+                f"Wrong Start Location: selected {spec.bits_per_unit} LSBs, "
+                f"but an authenticated header was found at {bits} LSBs"
+            ) from None
+        raise
     if demo_log:
         demo_log(f"DECODER | nonce={header[4:20].hex()} | media={spec.media} | "
                  f"LSBs={spec.bits_per_unit} | recovered start index={start} (zero-based)")

@@ -30,6 +30,7 @@ from app.verdict import Verdict
 
 from app.start_location import (
     CarrierSpec,
+    PayloadMissingError,
     WrongStartLocationError,
     extract_units,
 )
@@ -459,7 +460,7 @@ def run_image_attack_sweep() -> list[AttackResult]:
 
         damaged_bootstrap_accepted = False
         bootstrap_evidence = (
-            "No WrongStartLocationError was raised after bootstrap tampering."
+            "No payload-recovery error was raised after bootstrap tampering."
         )
 
         try:
@@ -469,6 +470,8 @@ def run_image_attack_sweep() -> list[AttackResult]:
                 bits,
             )
             damaged_bootstrap_accepted = True
+        except PayloadMissingError as error:
+            bootstrap_evidence = str(error)
         except WrongStartLocationError as error:
             bootstrap_evidence = str(error)
 

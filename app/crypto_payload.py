@@ -78,11 +78,13 @@ def run_verification(stego_path, key, bits, public_key, unpack_payload_fn, extra
     No Flask/HTTP dependency, so this can be unit-tested or reused by a CLI/tamper test.
     """
     from PIL import Image
-    from .start_location import WrongStartLocationError
+    from .start_location import PayloadMissingError, WrongStartLocationError
 
     try:
         img = Image.open(stego_path).convert("RGB")
         extracted_bytes = extract_payload_fn(stego_path, key, bits_per_channel=bits)
+    except PayloadMissingError:
+        return Verdict.PAYLOAD_MISSING, None
     except WrongStartLocationError:
         return Verdict.WRONG_START_LOCATION, None
     except Exception:

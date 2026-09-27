@@ -1,7 +1,7 @@
 ﻿"""PNG adapter; start-location policy belongs to start_location.py."""
 from PIL import Image
 from flask import current_app, has_request_context
-from .start_location import CarrierSpec, WrongStartLocationError, embed_units, extract_units, required_units
+from .start_location import CarrierSpec, PayloadMissingError, WrongStartLocationError, embed_units, extract_units, required_units
 
 
 def _web_demo_log():
@@ -55,7 +55,7 @@ def extract_payload(image_path: str, key: str, bits_per_channel: int = 1) -> byt
     demo_log = _web_demo_log()
     try:
         return extract_units(img.tobytes(), key, spec, demo_log=demo_log)
-    except WrongStartLocationError as error:
+    except (PayloadMissingError, WrongStartLocationError) as error:
         if demo_log:
-            demo_log(f"UPLOAD RECOVERY FAILED | {error} | wrong key/settings, missing frame, or tampering")
+            demo_log(f"UPLOAD RECOVERY FAILED | {error}")
         raise
