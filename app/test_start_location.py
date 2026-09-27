@@ -51,8 +51,29 @@ def test_wrong_key_bits_metadata_and_explicit_start():
             extract_units(encoded, key, other_spec)
     with pytest.raises(WrongStartLocationError):
         extract_units(encoded, KEY, spec, start_index=0)
-    with pytest.raises(PayloadMissingError):
+    with pytest.raises(WrongStartLocationError, match="authenticated header was found"):
         extract_units(encoded, KEY, CarrierSpec.image(40, 40, bits=2))
+
+
+@pytest.mark.parametrize("embedded_bits", range(1, 9))
+@pytest.mark.parametrize("selected_bits", range(1, 9))
+def test_wrong_lsb_verdict(tmp_path, embedded_bits, selected_bits):
+    from app.crypto_payload import run_verification
+    if embedded_bits == selected_bits:
+        return  # Correct-depth round trips are tested separately.
+    cover, stego = tmp_path / "cover.png", tmp_path / "stego.png"
+    Image.new("RGB", (40, 40), (120, 130, 140)).save(cover)
+    embed_payload(cover, stego, b"payload", KEY, embedded_bits)
+    verdict, payload = run_verification(stego, KEY, selected_bits, None, None, extract_payload)
+    assert (verdict, payload) == ("Wrong Start Location", None)
+
+
+def test_wrong_lsb_on_small_carrier():
+    # An 8-bit frame fits here, while even the 1-bit bootstrap cannot fit.
+    spec = CarrierSpec.audio(100, 1, 8000, bits=8)
+    encoded = embed_units([0] * 100, b"test", KEY, spec)
+    with pytest.raises(WrongStartLocationError, match="authenticated header was found at 8"):
+        extract_units(encoded, KEY, CarrierSpec.audio(100, 1, 8000, bits=1))
 
 
 def test_payload_tampering_and_forced_wraparound(monkeypatch):
