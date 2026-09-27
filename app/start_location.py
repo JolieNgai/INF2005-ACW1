@@ -1,11 +1,4 @@
-"""Sole owner of the project's variable start-location scheme (image + PCM).
-
-Wire format v1: fixed bootstrap [magic, nonce, length, header HMAC], then
-payload + payload HMAC in a keyed circular region excluding the bootstrap.
-Use a random shared secret (at least 32 random bytes), not a human password.
-This authenticates embedded data; it neither encrypts it nor authenticates all
-unused carrier samples. See start_location_notes.md for the security boundary.
-"""
+"""Sole owner of the project's variable start-location scheme (image + PCM)."""
 
 from dataclasses import dataclass, replace
 import hmac
@@ -178,11 +171,20 @@ def _read(units, byte_count, spec, start, bootstrap=False):
     return bytes(result)
 
 
-def embed_units(units: Sequence[int], payload: bytes, key, spec: CarrierSpec, *, demo_log=None) -> list[int]:
+def embed_units(units: Sequence[int], payload: bytes, key, spec: CarrierSpec, *, demo_log=None,
+                prepared_header=None) -> list[int]:
     """Return a modified copy of RGB channels or signed/unsigned PCM samples."""
     if len(units) != spec.total_units:
         raise ValueError("carrier length does not match specification")
-    start, header = select_start_location(key, spec, len(payload))
+    if prepared_header is None:
+        start, header = select_start_location(key, spec, len(payload))
+    else:
+        # Audio selects once before hashing the exact occupied sample region.
+        # Authenticate the prepared layout and prohibit changing its length.
+        header = prepared_header
+        start, length = recover_start_location(key, spec, header)
+        if length != len(payload):
+            raise ValueError("Prepared header length does not match payload")
     tag = _mac(key, b"payload", spec, header + start.to_bytes(32, "big") + payload)
     output = list(units)
     _write(output, header, spec, 0, bootstrap=True)
