@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request, render_template
+from werkzeug.exceptions import HTTPException
 
 def create_app():
     app = Flask(__name__)
@@ -20,8 +21,9 @@ def create_app():
     @app.errorhandler(Exception)
     def handle_unexpected_error(e):
         verdict, explanation = verdict_from_exception(e)
+        status = e.code if isinstance(e, HTTPException) else 500
         if request.path.startswith('/audio'):
-            return jsonify(error=explanation, verdict=verdict.value), 500
-        return render_template('home.html', error=explanation, verdict=verdict.value), 500
+            return jsonify(error=explanation, verdict=verdict.value), status
+        return render_template('home.html', error=explanation, verdict=verdict.value), status
 
     return app

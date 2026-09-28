@@ -72,7 +72,7 @@
     <button type="submit">Generate Test File</button>
   </form>
   <div id="tampered-download" role="status"></div>
-  <p class="note">Download the generated file, then upload it under Verify Stego Audio using the original LSB count and matching public key, leaving the optional start index blank. Expected verdict: <strong>Tampered</strong>. Damage to the hidden packet in 8-bit audio may produce a different failure verdict.</p>
+  <p class="note">Download the generated file, then upload it under Verify Stego Audio <strong>using the original LSB count and matching public key, leaving the optional start index blank</strong>. Expected verdict: <strong>Tampered</strong>. Damage to the hidden packet in 8-bit audio may produce a different failure verdict.</p>
 </section>
 <section class="card">
   <h2>Demo Utility: Generate &quot;Cannot Verify&quot; Test File</h2>
@@ -81,7 +81,7 @@
     <button type="submit">Generate Test File</button>
   </form>
   <div id="corrupt-download" role="status"></div>
-  <p class="note">Download the generated file, then upload it under Verify Stego Audio with <strong>1 LSB</strong> and leave the optional start index blank. Leave the public-key field empty. Expected verdict: <strong>Cannot Verify</strong>.</p>
+  <p class="note">Download the generated file, then upload it under Verify Stego Audio with <strong>1 LSB</strong> and <strong>leave the optional start index blank</strong>. <strong>Leave the public-key field empty</strong>. Expected verdict: <strong>Cannot Verify</strong>.</p>
 </section>
 <section class="card">
   <h2>Demo Utility: Generate Wrong Public Key</h2>
@@ -90,7 +90,7 @@
     <button type="submit">Generate Wrong Public Key</button>
   </form>
   <div id="wrong-key-download" role="status"></div>
-  <p class="note">Download wrong-public-key.pem. Under Verify Stego Audio, upload your valid stego WAV and select this file as the Signer's Public Key. Use the correct original LSB count and leave the optional start index blank. Expected verdict: <strong>Signature Invalid</strong>. Afterwards, clear this key selection to use the server's default key, or upload the matching key.</p>
+  <p class="note">Download wrong-public-key.pem. Under Verify Stego Audio, <strong>upload your valid stego WAV</strong> and <strong>select this file as the Signer's Public Key</strong>. <strong>Use the correct original LSB count and leave the optional start index blank</strong>. Expected verdict: <strong>Signature Invalid</strong>. Afterwards, clear this key selection to use the server's default key, or upload the matching key.</p>
 </section>
 </div>
 <script src="{{ url_for('static', filename='audio.js', v='15') }}"></script>
