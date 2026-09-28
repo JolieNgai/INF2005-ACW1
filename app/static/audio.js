@@ -79,6 +79,10 @@ byId('embed').onsubmit = event => {
     byId('extract').elements.start.value = '';
   });
 };
+byId('clear-public-key').addEventListener('click', () => {
+  byId('audio-public-key').value = '';
+  byId('verification-result').hidden = true;
+});
 byId('extract').onsubmit = event => {
   event.preventDefault();
   byId('verification-result').hidden = true;
