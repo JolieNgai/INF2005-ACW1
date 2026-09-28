@@ -273,32 +273,3 @@ def generate_signature_invalid_test():
         signature_invalid_test_file=output_filename,
         signature_invalid_test_bits=test_bits,
     )
-
-
-@bp.route('/generate-payload-missing-test', methods=['POST'])
-def generate_payload_missing_test():
-    """
-    Demo/test utility: embeds deliberately non-JSON junk bytes (not a real
-    payload+signature package) into a fresh cover image, using the exact same
-    embed_payload() pipeline as a normal embed. The bytes authenticate
-    correctly at the start-location/HMAC layer (so extraction succeeds), but
-    fail to parse as a valid payload structure which is exactly what
-    triggers the Payload Missing verdict on /verify.
-    """
-    cover_path = os.path.join(UPLOAD_FOLDER, "_tmp_cover_for_payload_missing.png")
-    output_filename = "payload_missing_test.png"
-    output_path = os.path.join(UPLOAD_FOLDER, output_filename)
-
-    dummy_cover = Image.new("RGB", (200, 200), color=(120, 130, 140))
-    dummy_cover.save(cover_path, "PNG")
-
-    junk_bytes = b"this is not a valid JSON payload package at all"
-    test_bits = 1
-
-    embed_payload(cover_path, output_path, junk_bytes, SECRET_KEY_PHRASE, bits_per_channel=test_bits)
-
-    return render_template(
-        'image_stego.html',
-        payload_missing_test_file=output_filename,
-        payload_missing_test_bits=test_bits,
-    )

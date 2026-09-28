@@ -31,7 +31,7 @@ byId('embed').elements.audio.addEventListener('change', event => {
 });
 byId('capacity').onclick = event => perform(event.target, async () => {
   const result = await post('capacity', byId('embed'));
-  byId('capacity-result').textContent = `Packet capacity: ${result.capacity_bytes} bytes (includes signature and metadata). Exact required size is checked when embedding.`;
+  byId('capacity-result').textContent = `Signed payload capacity after framing: ${result.capacity_bytes} bytes (includes signature and metadata). Exact required size is checked when embedding.`;
 });
 byId('embed').onsubmit = event => {
   event.preventDefault();
@@ -41,16 +41,33 @@ byId('embed').onsubmit = event => {
     byId('downloads').replaceChildren();
     byId('stego').src = download(byId('downloads'), 'stego.wav', blob);
     download(byId('downloads'), 'public-key.pem', new Blob([result.public_key], {type: 'text/plain'}));
-    byId('capacity-result').textContent = `Embedded ${result.required_bytes} bytes / ${result.capacity_bytes} bytes available.`;
+    byId('capacity-result').textContent = `Embedded ${result.required_bytes} bytes / ${result.capacity_bytes} bytes available. Derived start index: ${result.start_index}.`;
     byId('extract').elements.bits.value = event.target.elements.bits.value;
-    byId('extract').elements.start.value = event.target.elements.start.value;
+    byId('extract').elements.start.value = '';
   });
 };
 byId('extract').onsubmit = event => {
-  event.preventDefault(); byId('verdict').textContent = '';
+  event.preventDefault();
+  byId('verification-result').hidden = true;
+  byId('extracted-payload').hidden = true;
+  byId('extracted-message-row').hidden = true;
+  byId('extracted-message').textContent = '';
+  byId('payload-details').textContent = '';
+  const filename = event.target.elements.audio.files[0]?.name || '';
   perform(event.submitter, async () => {
     const result = await post('extract', event.target);
-    byId('verdict').textContent = JSON.stringify(result, null, 2);
+    byId('verified-filename').textContent = filename;
+    byId('verdict').textContent = result.verdict;
+    if (result.payload) {
+      const message = result.payload.metadata?.message;
+      if (typeof message === 'string' && message.length > 0) {
+        byId('extracted-message').textContent = message;
+        byId('extracted-message-row').hidden = false;
+      }
+      byId('payload-details').textContent = JSON.stringify(result.payload, null, 2);
+      byId('extracted-payload').hidden = false;
+    }
+    byId('verification-result').hidden = false;
   });
 };
 byId('tamper').onsubmit = event => {

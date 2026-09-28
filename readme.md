@@ -121,17 +121,18 @@ and integrates against.
 The payload is never embedded at a fixed position such as the top-left pixel.
 Instead, at a high level:
 
-- A shared secret key (`STEGO_SECRET_KEY`) is used to derive a starting position,
-  combined with a random nonce generated fresh at each embed.
+- A shared secret key (`STEGO_SECRET_KEY`) and fresh random nonce derive an
+  ordered sequence of distinct embedding positions using HMAC-SHA256 and a
+  sparse partial shuffle. The first position is the logged start index.
 - A small bootstrap header (magic bytes, nonce, payload length) is written at a
   fixed, well-known offset, itself authenticated so it cannot be forged or
   guessed without the key even though its position is public.
 - The verifier reads this header, checks its authenticity, and only then derives
-  the actual location where the payload and its own authentication tag are
-  hidden.
+  the same scattered positions where the payload and its authentication tag
+  are hidden. Terminal logs show the first ten encoder/decoder positions.
 - Because both the header and the payload region are keyed and authenticated, an
-  attacker without the secret key cannot locate, forge, or tamper with the hidden
-  data undetected. Any attempt fails authentication and is reported as
+  attacker without the secret key cannot reliably forge a valid frame for the hidden
+  data. Location scanning is still possible. Authentication failures are reported as
   `Wrong Start Location`, rather than silently succeeding.
 
 The image module (`app/image_stego.py`) calls into this shared scheme for every
@@ -184,18 +185,17 @@ isolates one verification layer at a time.
 Open http://localhost:8080/audio, or select **Audio Steganography** on the home page.
 
 1. Under **Embed**, upload an integer PCM WAV. For a repeatable demo, use
-   `examples/audio/cover.wav`, **1 LSB**, and **start sample 100**. Enter a message,
+   `examples/audio/cover.wav` and **1 LSB**. The start is derived automatically. Enter a message,
    such as: `Explain how steganography can be used to embed hidden verification data.`
-2. Click **Check capacity**, then **Embed and sign**. Capacity includes the framing
-   header, metadata, and signature as well as the message. Embedding is rejected
+2. Click **Check capacity**, then **Embed and sign**. Displayed capacity is the space for the signed JSON payload after authenticated framing; it includes message, metadata, and signature. Embedding is rejected
    if the complete packet does not fit.
 3. Play **Cover** and **Stego** to compare them. Download `stego.wav` and
    `public-key.pem`. Use 16-bit PCM and 1–2 LSBs for the listening comparison;
    higher settings may introduce audible noise.
 4. Under **Extract and verify**, upload the downloaded `stego.wav`, select the
-   same LSB setting and start sample, and click **Extract and verify**. The saved
+   same LSB setting, leave the optional start-index test blank, and click **Extract and verify**. The saved
    server public key is used by default. Upload the matching trusted public key
-   when verifying audio from another instance or the standalone demo.
+   when verifying audio from another instance or the standalone demo. Both instances also need the same configured `STEGO_SECRET_KEY`.
    Expect `"authentic": true`, `"verdict": "Authentic"`, and the recovered message.
 5. Under **Tampered-audio negative case**, upload that same stego WAV, click
    **Create tampered WAV**, and download `tampered.wav`. This changes one audio sample.
@@ -240,39 +240,44 @@ docker compose exec web python -m app.audio_demo
 
 This generates a three-second tone and writes `cover.wav`, `stego.wav`,
 `tampered.wav`, `public-key.pem`, and `verification.json` to `examples/audio/`.
-Use **1 LSB, start sample 100**, and explicitly upload that folder's public key
+Use **1 LSB** with automatic start recovery, and explicitly upload that folder's public key
 when verifying the generated examples. The demo uses its own key pair, separate
-from the web app's persistent keys. Rerunning it replaces the generated files.
+from the web app's persistent keys, and reads the start-location secret from .env. Rerunning it replaces the generated files.
 
 ### How audio embedding and verification work
 
-`app/audio_stego.py` reads WAV frames using Python's `wave` module. It replaces
-the selected **1–8 low bits per PCM sample**, starting at the chosen sample index.
-Samples are counted across interleaved channels. Sample width, sample rate,
-channel count, and frame count are preserved.
+`app/audio_stego.py` decodes integer PCM WAV samples (8/16/24/32-bit,
+mono/stereo), then calls the shared `app/start_location.py` scheme. A fresh
+nonce and `STEGO_SECRET_KEY` derive the start; the decoder authenticates the
+bootstrap and recovers that start automatically. WAV format settings and
+interleaved sample order are preserved. Audio uses the same header, scattered
+payload placement, and HMAC checks as images. The format is now `SL02`; old
+`ASG1` audio and `SL01` image/audio files must be re-embedded from original covers.
 
-Total packet capacity in bytes is:
+Capacity for the signed JSON envelope, including message, metadata and RSA
+signature but excluding start-location framing, is:
 
 ```text
-floor((sample_count - start_sample) * bits_per_sample / 8)
+header_samples = ceil(60 * 8 / bits_per_sample)
+capacity_bytes = max(0, floor((sample_count - header_samples) * bits_per_sample / 8) - 32)
 ```
 
-The packet has an eight-byte header (`ASG1` marker plus a four-byte body length)
-followed by JSON containing the payload and a base64 RSA signature. Bits are
-stored least-significant first. Extraction validates the length against available
-capacity before reading the packet.
+Embedding checks the exact sample count, including padding. It selects one
+nonce/header before computing the signed audio hash, then uses that same
+validated header during embedding. This keeps the hashing and placement aligned.
+The hash normalizes all selected LSBs in the header and scattered payload/HMAC
+region, including padding. All remaining PCM bits and the audio format settings
+are hashed. RSA-PSS protects that hash and the payload; HMAC protects the frame.
 
-The existing crypto module builds the payload with a media ID, timestamp, nonce,
-SHA-256 hash, and metadata containing the message, LSB count, and start sample.
-The app signs it using RSA-PSS and the existing private key. Audio verification
-uses the saved public key or an explicitly supplied trusted public key; it never
-trusts a key embedded inside the audio itself.
-
-Embedding changes audio bits, so hashing the untouched cover directly would make
-verification fail immediately. Instead, the hash clears exactly the bits occupied
-by the packet before hashing the remaining PCM data and audio format fields.
-The same operation is applied during verification. The signature protects the
-payload, while the hash detects edits outside it, including unused low bits.
+To demonstrate recovery, run `docker compose logs -f web` and embed/verify a WAV.
+`[START LOCATION]` logs show encoder and decoder indices and an independent
+wrong-index experiment. On the page, leave **Expected start index** blank for
+normal recovery. Enter `0` to test explicit rejection (the payload cannot start
+inside the reserved bootstrap). Use a wrong LSB setting to get **Wrong Start
+Location**, or an unembedded WAV to get **Payload Missing**. A damaged format
+marker may also be classified as missing; these are detection verdicts, not
+proof of a unique cause. Demo logging can be disabled with Flask configuration
+`START_LOCATION_DEMO=False`.
 
 ## Tests
 
@@ -293,7 +298,7 @@ with the existing image workflow.
 - **Positive case:** unmodified stego image → extraction succeeds → signature verifies → Authentic.
 - **Negative case (tampered):** stego image modified after embedding → verification fails → Tampered.
 - **Audio positive:** unmodified stego WAV with matching settings/key → Authentic.
-- **Audio negative:** sample modified after embedding → Tampered audio, or an
+- **Audio negative:** sample modified after embedding → Tampered, or an
   extraction/signature failure if the hidden packet is damaged.
 
 ### Audio wrong-start demo
@@ -319,8 +324,7 @@ also returns Payload Missing. Out-of-range start values remain input errors.
 
 ## Known Limitations
 
-- Audio start samples are selectable and signed but are not secret or derived
-  from `STEGO_SECRET_KEY`. Share the LSB setting and start sample with the receiver.
+- Audio recovery requires the same start-location secret and LSB setting. The secret must be strong and shared securely; a public RSA key alone is insufficient.
 - Steganography hides the message; it does **not encrypt** it. Anyone knowing or
   guessing the settings can read it. Keep private keys secret and distribute
   public keys through a trusted channel.
