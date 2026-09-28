@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>INF2005 Audio steganography</title>
+  <title>INF2005 Audio Steganography</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/audio.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/audio.css', v='6') }}">
 </head>
 <body>
 <div class="container audio-page">
@@ -16,15 +16,18 @@
 <p id="error" role="alert"></p>
 <p class="note">For a listening comparison, use 16-bit audio and 1–2 LSBs. Higher settings, especially with 8-bit audio, may add audible noise.</p>
 <section class="card">
-  <h2>1. Embed</h2>
+  <h2>Embed Payload</h2>
   <form id="embed">
-    <label>Cover WAV <input type="file" name="audio" accept=".wav,audio/wav" required></label>
+    <label>Cover Audio (.wav) <input type="file" name="audio" accept=".wav,audio/wav" required></label>
+    <p id="cover-capacity-result" role="status">Upload a WAV to see its capacity in bits.</p>
     <label>LSBs per sample <select name="bits">{% for n in range(1,9) %}<option>{{ n }}</option>{% endfor %}</select></label>
     <p class="note">The start location is derived automatically using the shared secret and a fresh nonce.</p>
     <label for="audio-message">Message to hide</label>
     <textarea id="audio-message" name="message" rows="4"
               placeholder="Enter the verification message to embed..." required></textarea>
-    <button type="button" id="capacity">Check capacity</button><button>Embed and sign</button>
+    <p id="embed-capacity-result" role="status" aria-live="polite">Enter a message to see its payload size.</p>
+    <small>Small: up to 150 characters; Medium: 151–499; Large: 500 or more. Payload includes metadata and signature. Capacity accounts for the start-location header, authentication tag and padding.</small>
+    <button>Embed Payload</button>
   </form>
   <p id="capacity-result" role="status"></p>
   <div class="players"><div><h3>Cover</h3><audio id="cover" controls></audio></div><div><h3>Stego</h3><audio id="stego" controls></audio></div></div>
@@ -32,37 +35,40 @@
   <p class="note">Audio uses the same saved signing key and start-location secret as the image workflow. Another instance needs the trusted public key, matching LSB setting, and the same configured start-location secret. The start index is recovered automatically. The message is hidden, not encrypted. Older audio stego files must be embedded again.</p>
 </section>
 <section class="card">
-  <h2>2. Extract and verify</h2>
+  <h2>Verify Stego Audio</h2>
   <form id="extract">
-    <label>Stego WAV <input type="file" name="audio" accept=".wav,audio/wav" required></label>
-    <label>Trusted public key <input type="file" name="public_key" accept=".pem"></label>
-    <label>LSBs used <select name="bits">{% for n in range(1,9) %}<option>{{ n }}</option>{% endfor %}</select></label>
+    <label>Stego Audio (.wav) <input type="file" name="audio" accept=".wav,audio/wav" required></label>
+    <label>Signer's Public Key (.pem) ? optional <input type="file" name="public_key" accept=".pem"></label>
+    <label>LSBs used when embedding <select name="bits">{% for n in range(1,9) %}<option>{{ n }}</option>{% endfor %}</select></label>
     <details><summary>Optional wrong-location test</summary>
       <label>Expected start index (leave blank for automatic recovery) <input name="start" type="number" min="0" placeholder="Automatic"></label>
       <p class="note">An incorrect index is rejected. Normal verification does not need this field.</p>
     </details>
-    <button>Extract and verify</button>
+    <button>Extract &amp; Verify</button>
   </form>
   <div id="verification-result" class="verdict" role="status" hidden>
     <h3>Verification Result</h3>
     <p><strong>File checked:</strong> <span id="verified-filename"></span></p>
     <p><strong>Verdict:</strong> <span id="verdict"></span></p>
+    <p><strong>Key used:</strong> <span id="verified-key"></span></p>
     <div id="extracted-payload" hidden>
       <h4>Extracted Payload</h4>
       <p id="extracted-message-row" hidden><strong>Message:</strong> <span id="extracted-message"></span></p>
       <pre id="payload-details"></pre>
     </div>
+    <h4>Full Verification Output</h4>
+    <pre id="verification-output"></pre>
   </div>
 </section>
 <section class="card">
   <h2>Demo Utility: Generate &quot;Tampered&quot; Test File</h2>
   <p class="description">Upload your stego WAV to deliberately change one audio sample and demonstrate the <strong>Tampered</strong> verdict. For this demo, use a valid 16-, 24-, or 32-bit PCM stego WAV so the change leaves the hidden payload intact. Your original file is unchanged.</p>
   <form id="tamper">
-    <label>Stego WAV <input type="file" name="audio" accept=".wav,audio/wav" required></label>
+    <label>Stego Audio (.wav) <input type="file" name="audio" accept=".wav,audio/wav" required></label>
     <button type="submit">Generate Test File</button>
   </form>
   <div id="tampered-download" role="status"></div>
-  <p class="note">Download the generated file, then upload it under Extract and verify using the original LSB count and matching public key, leaving the optional start index blank. Expected verdict: <strong>Tampered</strong>. Damage to the hidden packet in 8-bit audio may produce a different failure verdict.</p>
+  <p class="note">Download the generated file, then upload it under Verify Stego Audio using the original LSB count and matching public key, leaving the optional start index blank. Expected verdict: <strong>Tampered</strong>. Damage to the hidden packet in 8-bit audio may produce a different failure verdict.</p>
 </section>
 <section class="card">
   <h2>Demo Utility: Generate &quot;Cannot Verify&quot; Test File</h2>
@@ -71,7 +77,7 @@
     <button type="submit">Generate Test File</button>
   </form>
   <div id="corrupt-download" role="status"></div>
-  <p class="note">Download the generated file, then upload it under Extract and verify with <strong>1 LSB</strong> and leave the optional start index blank. Leave the public-key field empty. Expected verdict: <strong>Cannot Verify</strong>.</p>
+  <p class="note">Download the generated file, then upload it under Verify Stego Audio with <strong>1 LSB</strong> and leave the optional start index blank. Leave the public-key field empty. Expected verdict: <strong>Cannot Verify</strong>.</p>
 </section>
 <section class="card">
   <h2>Demo Utility: Generate Wrong Public Key</h2>
@@ -80,8 +86,8 @@
     <button type="submit">Generate Wrong Public Key</button>
   </form>
   <div id="wrong-key-download" role="status"></div>
-  <p class="note">Download wrong-public-key.pem. Under Extract and verify, upload your valid stego WAV and select this file as the Trusted public key. Use the correct original LSB count and leave the optional start index blank. Expected verdict: <strong>Signature Invalid</strong>. Afterwards, clear this key selection to use the server's default key, or upload the matching key.</p>
+  <p class="note">Download wrong-public-key.pem. Under Verify Stego Audio, upload your valid stego WAV and select this file as the Signer's Public Key. Use the correct original LSB count and leave the optional start index blank. Expected verdict: <strong>Signature Invalid</strong>. Afterwards, clear this key selection to use the server's default key, or upload the matching key.</p>
 </section>
 </div>
-<script src="{{ url_for('static', filename='audio.js') }}"></script>
+<script src="{{ url_for('static', filename='audio.js', v='14') }}"></script>
 </body></html>

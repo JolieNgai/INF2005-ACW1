@@ -98,14 +98,14 @@ def test_capacity_and_invalid_input(keys):
 @pytest.mark.parametrize('message', ['hello', '你好 🎵 "quoted"\nmessage'])
 def test_capacity_preview_matches_embedding(keys, message):
     original = cover()
-    preview = check_payload_capacity(original, message, keys[1], 8, 0, 'demo.wav')
-    _, actual = embed(original, message, keys[0], 8, 0, 'demo.wav')
+    preview = check_payload_capacity(original, message, keys[1], 8, 'demo.wav')
+    _, actual = embed(original, message, keys[0], 8, key=KEY, media_id='demo.wav')
     assert preview['required_bytes'] == actual['required_bytes']
     assert preview['required_bits'] == actual['required_bytes'] * 8
-    exact = cover(samples=preview['required_bytes'])
-    assert check_payload_capacity(exact, message, keys[1], 8, 0, 'demo.wav')['fits']
-    small = cover(samples=preview['required_bytes'] - 1)
-    overflow = check_payload_capacity(small, message, keys[1], 8, 0, 'demo.wav')
+    exact = cover(samples=actual['required_samples'])
+    assert check_payload_capacity(exact, message, keys[1], 8, 'demo.wav')['fits']
+    small = cover(samples=actual['required_samples'] - 1)
+    overflow = check_payload_capacity(small, message, keys[1], 8, 'demo.wav')
     assert not overflow['fits']
     assert overflow['required_bits'] - overflow['capacity_bits'] == 8
 
