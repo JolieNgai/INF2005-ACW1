@@ -29,9 +29,42 @@ byId('embed').elements.audio.addEventListener('change', event => {
   byId('stego').removeAttribute('src'); byId('stego').load();
   byId('downloads').replaceChildren(); byId('capacity-result').textContent = '';
 });
-byId('capacity').onclick = event => perform(event.target, async () => {
-  const result = await post('capacity', byId('embed'));
-  byId('capacity-result').textContent = `Signed payload capacity after framing: ${result.capacity_bytes} bytes (includes signature and metadata). Exact required size is checked when embedding.`;
+let capacityTimer;
+let capacityRevision = 0;
+byId('embed').addEventListener('input', () => {
+  clearTimeout(capacityTimer);
+  const revision = ++capacityRevision;
+  const form = byId('embed');
+  const cover = byId('cover-capacity-result');
+  const output = byId('embed-capacity-result');
+  output.style.color = '';
+  if (!form.elements.audio.files.length) {
+    cover.textContent = 'Upload a WAV to see its capacity in bits.';
+    output.textContent = 'Enter a message to see its payload size.';
+    return;
+  }
+  cover.textContent = 'Checking cover capacity…';
+  output.textContent = 'Checking payload size…';
+  capacityTimer = setTimeout(async () => {
+    try {
+      const result = await post('capacity', form);
+      if (revision !== capacityRevision) return;
+      cover.textContent = `Capacity: ${result.capacity_bits.toLocaleString()} bits`;
+      if (!form.elements.message.value) {
+        output.textContent = 'Enter a message to see its payload size.';
+        return;
+      }
+      const length = Array.from(form.elements.message.value.trim()).length;
+      const label = length >= 500 ? 'Large' : length > 150 ? 'Medium' : 'Small';
+      output.textContent = `Payload: ${result.required_bits.toLocaleString()} bits — ${label} (${result.fits ? 'fits' : 'exceeds cover capacity'}).`;
+      output.style.color = result.fits ? '#216e39' : '#a12626';
+    } catch (error) {
+      if (revision !== capacityRevision) return;
+      cover.textContent = 'Cover capacity unavailable.';
+      output.textContent = error.message;
+      output.style.color = '#a12626';
+    }
+  }, 400);
 });
 byId('embed').onsubmit = event => {
   event.preventDefault();
@@ -54,10 +87,13 @@ byId('extract').onsubmit = event => {
   byId('extracted-message').textContent = '';
   byId('payload-details').textContent = '';
   const filename = event.target.elements.audio.files[0]?.name || '';
+  const keyName = event.target.elements.public_key.files[0]?.name;
   perform(event.submitter, async () => {
     const result = await post('extract', event.target);
     byId('verified-filename').textContent = filename;
     byId('verdict').textContent = result.verdict;
+    byId('verified-key').textContent = keyName || "This server's own public key (same-machine test)";
+    byId('verification-output').textContent = JSON.stringify(result, null, 2);
     if (result.payload) {
       const message = result.payload.metadata?.message;
       if (typeof message === 'string' && message.length > 0) {

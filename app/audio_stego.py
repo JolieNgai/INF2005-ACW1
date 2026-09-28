@@ -67,6 +67,15 @@ def _packet(payload, signature):
                       sort_keys=True, separators=(',', ':')).encode()
 
 
+def check_payload_capacity(wav_bytes, message, public_key, bits=1, media_id='AUDIO001'):
+    available = capacity(wav_bytes, bits)
+    payload = build_payload(media_id, bytes(32), {'message': message, 'bits': bits})
+    required = len(_packet(payload, bytes(public_key.key_size // 8)))
+    return {'capacity_bytes': available, 'required_bytes': required,
+            'capacity_bits': available * 8, 'required_bits': required * 8,
+            'fits': required <= available}
+
+
 def _audio_hash(params, frames, spec, key, nonce, packet_size):
     # Shared _write overwrites every chosen LSB, including alignment padding.
     # Normalize exactly those units: bootstrap plus scattered payload + HMAC.
