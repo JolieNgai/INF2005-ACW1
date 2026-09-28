@@ -5,7 +5,7 @@ import io
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from flask import Blueprint, jsonify, render_template, request, send_file
+from flask import Blueprint, current_app, jsonify, render_template, request, send_file
 
 from . import audio_stego
 from . import routes as main_routes
@@ -29,19 +29,23 @@ def process(action):
             return send_file(io.BytesIO(audio_stego.tamper(data)), mimetype='audio/wav',
                              as_attachment=True, download_name='tampered.wav')
         bits = int(request.form.get('bits', '1'))
-        start = int(request.form.get('start', '0'))
+        demo_log = None
+        if current_app.config.get('START_LOCATION_DEMO', True):
+            demo_log = lambda message: print(f'[START LOCATION] {message}', flush=True)
         if action == 'corrupt-payload':
-            damaged = audio_stego.corrupt_payload(data, bits, start)
+            raw_start = request.form.get('start', '').strip()
+            start = int(raw_start) if raw_start else None
+            damaged = audio_stego.corrupt_payload(data, bits,
+                        key=main_routes.SECRET_KEY_PHRASE, start=start)
             return send_file(io.BytesIO(damaged), mimetype='audio/wav',
                              as_attachment=True, download_name='cannot_verify.wav')
         if action == 'capacity':
-            return jsonify(audio_stego.check_payload_capacity(
-                data, request.form.get('message', ''), main_routes.PUBLIC_KEY,
-                bits, start, media_id=upload.filename))
+            return jsonify(capacity_bytes=audio_stego.capacity(data, bits))
         if action == 'embed':
             stego, info = audio_stego.embed(
                 data, request.form.get('message', ''), main_routes.PRIVATE_KEY,
-                bits, start, media_id=upload.filename)
+                bits, key=main_routes.SECRET_KEY_PHRASE, media_id=upload.filename,
+                demo_log=demo_log)
             pem = main_routes.PUBLIC_KEY.public_bytes(
                 serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
             return jsonify(**info, audio=base64.b64encode(stego).decode(),
@@ -55,7 +59,12 @@ def process(action):
                 public = serialization.load_pem_public_key(key_file.read())
             if not isinstance(public, rsa.RSAPublicKey):
                 raise ValueError('Use an RSA public key.')
-            return jsonify(audio_stego.extract(data, public, bits, start))
+            # Empty means automatic recovery. An explicit index is only a
+            # diagnostic assertion, never the source of the recovered location.
+            raw_start = request.form.get('start', '').strip()
+            start = int(raw_start) if raw_start else None
+            return jsonify(audio_stego.extract(data, public, bits,
+                           key=main_routes.SECRET_KEY_PHRASE, start=start, demo_log=demo_log))
         return jsonify(error='Unknown audio action.'), 404
     except UnsupportedAlgorithm:
         return jsonify(error='Unsupported public key. Use an RSA PEM public key.'), 400
@@ -67,8 +76,8 @@ def process(action):
 def generate_cannot_verify_test():
     from .audio_demo import demo_cover
     stego, _ = audio_stego.embed(demo_cover(), 'Cannot Verify demonstration',
-                                main_routes.PRIVATE_KEY, bits=1, start=100)
-    damaged = audio_stego.corrupt_payload(stego, bits=1, start=100)
+                                main_routes.PRIVATE_KEY, bits=1, key=main_routes.SECRET_KEY_PHRASE)
+    damaged = audio_stego.corrupt_payload(stego, bits=1, key=main_routes.SECRET_KEY_PHRASE)
     return send_file(io.BytesIO(damaged), mimetype='audio/wav',
                      as_attachment=True, download_name='cannot_verify.wav')
 

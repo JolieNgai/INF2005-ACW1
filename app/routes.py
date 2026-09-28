@@ -170,11 +170,22 @@ def embed():
         bits=bits,
         capacity_msg=msg,
     )
-
+@bp.route('/public-key')
+def get_public_key():
+    """
+    Serves this instance's public key as a downloadable .pem file.
+    Public keys are meant to be shared openly.
+    """
+    return send_from_directory(
+        KEY_FOLDER, 'public_key.pem',
+        as_attachment=True,
+        download_name='public_key.pem',
+    )
 
 @bp.route('/verify', methods=['POST'])
 def verify():
     file = request.files.get('stego_image')
+    pubkey_file = request.files.get('signer_public_key')  # optional upload
 
     ok, err = validate_upload(file, ('.png',))
     if not ok:
@@ -187,27 +198,38 @@ def verify():
     verify_path = os.path.join(UPLOAD_FOLDER, f"verify_{file.filename}")
     file.save(verify_path)
 
-    try:
-        img = Image.open(verify_path)
-        img.verify()
-    except Exception:
-        return render_template('image_stego.html', error="Invalid or corrupted PNG image", bits=bits), 400
+    # Determine which public key to verify against.
+    # If the verifier uploaded a signer's public key, use that (this is the cross-machine case: Party B trusts a specific key they received from Party A, not whatever key happens to be on B's own server).
+    # Otherwise fall back to this instance's own key, for same-machine testing.
+    if pubkey_file and pubkey_file.filename:
+        try:
+            from cryptography.hazmat.primitives import serialization
+            verifying_key = serialization.load_pem_public_key(pubkey_file.read())
+        except Exception:
+            return render_template(
+                'image_stego.html',
+                error="Uploaded public key file is invalid or corrupted",
+                bits=bits,
+            ), 400
+    else:
+        verifying_key = PUBLIC_KEY
 
     verdict, payload = run_verification(
         stego_path=verify_path,
         key=SECRET_KEY_PHRASE,
         bits=bits,
-        public_key=PUBLIC_KEY,
+        public_key=verifying_key,
         unpack_payload_fn=unpack_payload,
         extract_payload_fn=extract_payload,
     )
 
     return render_template(
         'image_stego.html',
-        verdict=verdict.value,   # .value gives the display string, e.g. "Authentic"
+        verdict=verdict.value,
         extracted_payload=payload,
         bits=bits,
         verified_filename=file.filename,
+        used_own_key=(not (pubkey_file and pubkey_file.filename)),
     )
 
 
@@ -250,33 +272,4 @@ def generate_signature_invalid_test():
         'image_stego.html',
         signature_invalid_test_file=output_filename,
         signature_invalid_test_bits=test_bits,
-    )
-
-
-@bp.route('/generate-payload-missing-test', methods=['POST'])
-def generate_payload_missing_test():
-    """
-    Demo/test utility: embeds deliberately non-JSON junk bytes (not a real
-    payload+signature package) into a fresh cover image, using the exact same
-    embed_payload() pipeline as a normal embed. The bytes authenticate
-    correctly at the start-location/HMAC layer (so extraction succeeds), but
-    fail to parse as a valid payload structure which is exactly what
-    triggers the Payload Missing verdict on /verify.
-    """
-    cover_path = os.path.join(UPLOAD_FOLDER, "_tmp_cover_for_payload_missing.png")
-    output_filename = "payload_missing_test.png"
-    output_path = os.path.join(UPLOAD_FOLDER, output_filename)
-
-    dummy_cover = Image.new("RGB", (200, 200), color=(120, 130, 140))
-    dummy_cover.save(cover_path, "PNG")
-
-    junk_bytes = b"this is not a valid JSON payload package at all"
-    test_bits = 1
-
-    embed_payload(cover_path, output_path, junk_bytes, SECRET_KEY_PHRASE, bits_per_channel=test_bits)
-
-    return render_template(
-        'image_stego.html',
-        payload_missing_test_file=output_filename,
-        payload_missing_test_bits=test_bits,
     )

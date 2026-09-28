@@ -520,61 +520,32 @@ def _make_audio_cover(
     return output.getvalue()
 
 
-def _read_audio_envelope(
-    stego_bytes: bytes,
-    bits: int,
-    start: int,
-) -> dict:
-    """Read the embedded JSON envelope for controlled attack mutation."""
+# Fixed fixture secret for repeatable attack tests only; web routes use .env.
+_AUDIO_TEST_KEY = b'audio-attack-fixture-start-key'
 
+
+def _read_audio_envelope(stego_bytes, bits, start):
+    """Recover the authenticated envelope for controlled mutation."""
     params, frames = audio_stego.read_wav(stego_bytes)
-    header = audio_stego._extract_bytes(
-        frames, params.sampwidth, bits, start, audio_stego.HEADER.size
-    )
-    magic, body_length = audio_stego.HEADER.unpack(header)
-    if magic != audio_stego.MAGIC:
-        raise ValueError("Audio attack fixture does not contain a valid packet.")
-    packet = audio_stego._extract_bytes(
-        frames,
-        params.sampwidth,
-        bits,
-        start,
-        audio_stego.HEADER.size + body_length,
-    )
-    return json.loads(packet[audio_stego.HEADER.size:])
+    spec = audio_stego._spec(params, bits)
+    return json.loads(audio_stego.extract_units(
+        audio_stego._samples(params, frames), _AUDIO_TEST_KEY, spec))
 
 
-def _replace_audio_packet(
-    stego_bytes: bytes,
-    payload: dict,
-    signature: bytes,
-    bits: int,
-    start: int,
-) -> bytes:
-    """Replace a packet while retaining the WAV parameters and PCM cover."""
+def _replace_audio_packet(stego_bytes, payload, signature, bits, start):
+    """Fixture with a valid location HMAC but modified RSA-protected content.
 
+    This deliberately knows the fixture HMAC key to isolate the RSA checks;
+    it does not model an attacker forging HMAC without the shared secret.
+    """
     packet = audio_stego._packet(payload, signature)
     params, frames = audio_stego.read_wav(stego_bytes)
-    if len(packet) > audio_stego.capacity(stego_bytes, bits, start):
-        raise ValueError("Replacement audio packet exceeds cover capacity.")
-
-    output = bytearray(frames)
-    for offset in range(0, len(packet) * 8, bits):
-        used = min(bits, len(packet) * 8 - offset)
-        value = sum(
-            (
-                (packet[(offset + bit) // 8] >> ((offset + bit) % 8))
-                & 1
-            )
-            << bit
-            for bit in range(used)
-        )
-        frame_index = (start + offset // bits) * params.sampwidth
-        output[frame_index] = (
-            output[frame_index] & (255 ^ ((1 << used) - 1))
-        ) | value
-    return audio_stego.write_wav(params, output)
-
+    spec = audio_stego._spec(params, bits)
+    samples = audio_stego._samples(params, frames)
+    header = audio_stego._read(samples, audio_stego.HEADER_BYTES, spec, 0, bootstrap=True)
+    output = audio_stego.embed_units(samples, packet, _AUDIO_TEST_KEY, spec,
+                                    prepared_header=header)
+    return audio_stego.write_wav(params, audio_stego._frames(params, output))
 
 def run_audio_attack_sweep() -> list[AttackResult]:
     """Run attacks against the complete PCM WAV embedding workflow."""
@@ -582,22 +553,22 @@ def run_audio_attack_sweep() -> list[AttackResult]:
     private_key, public_key = generate_keypair()
     _, wrong_public_key = generate_keypair()
     bits = 1
-    start = 37
+    start = None
     results: list[AttackResult] = []
 
     # Positive baseline: embed and verify an unchanged signed WAV payload.
     cover = _make_audio_cover()
-    stego, _ = audio_stego.embed(
+    stego, info = audio_stego.embed(
         cover,
         "ORIGINAL",
         private_key,
         bits=bits,
-        start=start,
+        key=_AUDIO_TEST_KEY,
         media_id="AUDIO001",
     )
 
     verification = audio_stego.extract(
-        stego, public_key, bits=bits, start=start
+        stego, public_key, bits=bits, key=_AUDIO_TEST_KEY
     )
     results.append(
         _result(
@@ -626,7 +597,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
         start,
     )
     verification = audio_stego.extract(
-        corrupted_payload_audio, public_key, bits=bits, start=start
+        corrupted_payload_audio, public_key, bits=bits, key=_AUDIO_TEST_KEY
     )
     results.append(
         _result(
@@ -640,7 +611,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
 
     # Wrong key: verify the audio using an unrelated RSA public key.
     verification = audio_stego.extract(
-        stego, wrong_public_key, bits=bits, start=start
+        stego, wrong_public_key, bits=bits, key=_AUDIO_TEST_KEY
     )
     results.append(
         _result(
@@ -664,7 +635,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
     )
     
     verification = audio_stego.extract(
-        corrupted_signature_audio, public_key, bits=bits, start=start
+        corrupted_signature_audio, public_key, bits=bits, key=_AUDIO_TEST_KEY
     )
     results.append(
         _result(
@@ -678,7 +649,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
 
     # Wrong start location: extract one sample after the correct position.
     verification = audio_stego.extract(
-        stego, public_key, bits=bits, start=start + 1
+        stego, public_key, bits=bits, key=_AUDIO_TEST_KEY, start=info["start_index"] + 1
     )
     results.append(
         _result(
@@ -693,7 +664,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
     # Audio tampering: modify a PCM bit outside the embedded packet.
     tampered_audio = audio_stego.tamper(stego)
     verification = audio_stego.extract(
-        tampered_audio, public_key, bits=bits, start=start
+        tampered_audio, public_key, bits=bits, key=_AUDIO_TEST_KEY
     )
     results.append(
         _result(
@@ -714,7 +685,7 @@ def run_audio_attack_sweep() -> list[AttackResult]:
             "OVERSIZED",
             private_key,
             bits=bits,
-            start=0,
+            key=_AUDIO_TEST_KEY,
             media_id="AUDIO-SMALL",
         )
     except ValueError as error:

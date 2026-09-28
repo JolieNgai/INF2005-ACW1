@@ -2,6 +2,8 @@
 import io
 import json
 import math
+import os
+from dotenv import load_dotenv
 from pathlib import Path
 import struct
 import wave
@@ -24,20 +26,22 @@ def demo_cover():
 
 
 def main():
+    load_dotenv()
+    key = os.environ['STEGO_SECRET_KEY']
     directory = Path('examples/audio')
     directory.mkdir(parents=True, exist_ok=True)
     cover = demo_cover()
     private, public = generate_keypair()
     protected, sizes = embed(cover, 'Explain how steganography can be used to embed hidden verification data.',
-                              private, bits=1, start=100)
+                              private, bits=1, key=key)
     damaged = tamper(protected)
     for name, data in [('cover.wav', cover), ('stego.wav', protected), ('tampered.wav', damaged)]:
         (directory / name).write_bytes(data)
     (directory / 'public-key.pem').write_bytes(public.public_bytes(
         serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo))
-    evidence = {'bits': 1, 'start': 100, **sizes,
-                'positive': extract(protected, public, 1, 100),
-                'negative': extract(damaged, public, 1, 100)}
+    evidence = {'bits': 1, 'start_index': sizes['start_index'], **sizes,
+                'positive': extract(protected, public, 1, key=key),
+                'negative': extract(damaged, public, 1, key=key)}
     (directory / 'verification.json').write_text(json.dumps(evidence, indent=2), encoding='utf-8')
     print(json.dumps(evidence, indent=2))
 
