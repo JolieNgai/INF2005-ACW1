@@ -7,7 +7,7 @@ import pytest
 from app import create_app
 from app.audio_stego import capacity, embed, extract, read_wav, tamper, write_wav
 from app.crypto_payload import generate_keypair
-from app.start_location import CarrierSpec, _indices, _units, TAG_BYTES
+from app.start_location import CarrierSpec, derive_payload_positions, _read, HEADER_BYTES, _units, TAG_BYTES
 KEY = b'audio-unit-test-secret'
 
 
@@ -70,8 +70,10 @@ def test_negative_cases(keys):
     assert not extract(write_wav(params, changed), keys[1], key=KEY)['authentic']
     changed = bytearray(frames)
     spec = CarrierSpec.audio(params.nframes, params.nchannels, params.framerate, 16, 1)
-    occupied = set(range(spec.header_units)) | set(_indices(
-        spec, info['start_index'], _units(info['required_bytes'] + TAG_BYTES, 1)))
+    from app.audio_stego import _samples
+    header = _read(_samples(params, frames), HEADER_BYTES, spec, 0, bootstrap=True)
+    occupied = set(range(spec.header_units)) | set(derive_payload_positions(
+        KEY, spec, header[4:20], _units(info['required_bytes'] + TAG_BYTES, 1)))
     unused = next(i for i in range(spec.total_units) if i not in occupied)
     changed[unused * params.sampwidth] ^= 1  # unused LSB must still be hashed
     assert extract(write_wav(params, changed), keys[1], key=KEY)['verdict'] == 'Tampered'
@@ -208,7 +210,7 @@ def test_audio_upload_limit_matches_main_proxy(client):
     assert '20 MiB' in response.get_json()['error']
 
 
-def test_audio_wraparound_hash_and_fresh_nonce(keys, monkeypatch):
+def test_audio_scattered_hash_and_fresh_nonce(keys, monkeypatch):
     from app.start_location import derive_start_location
     from app import audio_stego
     original = cover(samples=16000)
@@ -218,9 +220,9 @@ def test_audio_wraparound_hash_and_fresh_nonce(keys, monkeypatch):
                  if derive_start_location(KEY, spec, i.to_bytes(16, 'big')) > 15500)
     with monkeypatch.context() as scope:
         scope.setattr('app.start_location.secrets.token_bytes', lambda n: nonce)
-        stego, info = embed(original, 'wrap around', keys[0], 3, key=KEY)
+        stego, info = embed(original, 'scattered audio', keys[0], 3, key=KEY)
     assert info['start_index'] > 15500
     assert extract(stego, keys[1], 3, key=KEY)['authentic']
-    second, _ = embed(original, 'wrap around', keys[0], 3, key=KEY)
+    second, _ = embed(original, 'scattered audio', keys[0], 3, key=KEY)
     assert second != stego
     assert extract(second, keys[1], 3, key=KEY)['authentic']

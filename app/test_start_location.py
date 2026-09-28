@@ -3,11 +3,71 @@ from PIL import Image
 from app.start_location import (
     CarrierSpec, HEADER_BYTES, PayloadMissingError, WrongStartLocationError, derive_start_location,
     select_start_location, recover_start_location, required_units,
-    embed_units, extract_units,
+    embed_units, extract_units, derive_payload_positions,
 )
 from app.image_stego import embed_payload, extract_payload, check_capacity
 
 KEY = bytes(range(32))
+
+
+@pytest.mark.parametrize("bits", range(1, 9))
+def test_scattered_positions_are_a_permutation_with_stable_prefix(bits):
+    spec = CarrierSpec.audio(1000, 1, 8000, bits=bits)
+    nonce = bytes(range(16))
+    count = spec.total_units - spec.header_units
+    positions = list(derive_payload_positions(KEY, spec, nonce, count))
+    assert sorted(positions) == list(range(spec.header_units, spec.total_units))
+    assert positions[:20] == list(derive_payload_positions(KEY, spec, nonce, 20))
+    assert positions[0] == derive_start_location(KEY, spec, nonce)
+    assert positions[:20] != list(range(positions[0], positions[0] + 20))
+    assert positions != list(derive_payload_positions(b'other-key', spec, nonce, count))
+    assert positions != list(derive_payload_positions(KEY, spec, bytes(16), count))
+
+
+def test_scattered_count_bounds():
+    spec = CarrierSpec.audio(1000, 1, 8000)
+    assert list(derive_payload_positions(KEY, spec, bytes(16), 0)) == []
+    for count in (-1, 1001, 1.5):
+        with pytest.raises(ValueError):
+            list(derive_payload_positions(KEY, spec, bytes(16), count))
+
+
+def test_scattered_selected_and_unused_units_and_log_recovery(monkeypatch):
+    from app.start_location import _units, TAG_BYTES
+    spec = CarrierSpec.image(40, 40, bits=3)
+    nonce = bytes(range(16))
+    monkeypatch.setattr('app.start_location.secrets.token_bytes', lambda n: nonce)
+    original = [123] * spec.total_units
+    payload = b'scattered payload'
+    logs = []
+    encoded = embed_units(original, payload, KEY, spec, demo_log=logs.append)
+    positions = list(derive_payload_positions(KEY, spec, nonce, _units(len(payload) + TAG_BYTES, 3)))
+    occupied = set(range(spec.header_units)) | set(positions)
+    assert all(encoded[i] == original[i] for i in range(spec.total_units) if i not in occupied)
+    assert extract_units(encoded, KEY, spec, demo_log=logs.append) == payload
+    previews = [line.split(': ', 1)[1] for line in logs if 'positions (first 10)' in line]
+    assert previews == [str(positions[:10]), str(positions[:10])]
+    assert any('HMAC rejected' in line for line in logs)
+    encoded[positions[10]] ^= 1
+    with pytest.raises(WrongStartLocationError, match='payload authentication failed'):
+        extract_units(encoded, KEY, spec)
+
+
+def test_legacy_format_rejected():
+    spec = CarrierSpec.image(40, 40)
+    _, header = select_start_location(KEY, spec, 10)
+    with pytest.raises(WrongStartLocationError, match='legacy SL01'):
+        recover_start_location(KEY, spec, b'SL01' + header[4:])
+
+
+def test_prepared_header_must_match_payload_length():
+    spec = CarrierSpec.image(40, 40)
+    _, header = select_start_location(KEY, spec, 10)
+    with pytest.raises(ValueError, match='length does not match'):
+        embed_units([0] * spec.total_units, b'short', KEY, spec, prepared_header=header)
+    with pytest.raises(WrongStartLocationError, match='bootstrap authentication failed'):
+        embed_units([0] * spec.total_units, b'wrong size', KEY, spec,
+                    prepared_header=header[:-1] + bytes([header[-1] ^ 1]))
 
 
 @pytest.mark.parametrize("bits", range(1, 9))
@@ -76,7 +136,7 @@ def test_wrong_lsb_on_small_carrier():
         extract_units(encoded, KEY, CarrierSpec.audio(100, 1, 8000, bits=1))
 
 
-def test_payload_tampering_and_forced_wraparound(monkeypatch):
+def test_scattered_payload_tampering_near_carrier_end(monkeypatch):
     spec = CarrierSpec.image(40, 40, bits=3)
     nonce = next(i.to_bytes(16, "big") for i in range(10000)
                  if derive_start_location(KEY, spec, i.to_bytes(16, "big")) > 4700)

@@ -11,7 +11,7 @@ from .verdict import Verdict
 from .start_location import (
     CarrierSpec, HEADER_BYTES, TAG_BYTES, PayloadMissingError, WrongStartLocationError,
     select_start_location, recover_start_location, embed_units, extract_units,
-    required_units, _read, _indices, _units,
+    required_units, _read, derive_payload_positions, _units,
 )
 
 
@@ -67,15 +67,15 @@ def _packet(payload, signature):
                       sort_keys=True, separators=(',', ':')).encode()
 
 
-def _audio_hash(params, frames, spec, start, packet_size):
+def _audio_hash(params, frames, spec, key, nonce, packet_size):
     # Shared _write overwrites every chosen LSB, including alignment padding.
-    # Normalize exactly those units: bootstrap plus circular payload + HMAC.
+    # Normalize exactly those units: bootstrap plus scattered payload + HMAC.
     # All other bits, including unused low bits, remain protected by the hash.
     normalized = bytearray(frames)
     mask = 255 ^ ((1 << spec.bits_per_unit) - 1)
     for index in range(spec.header_units):
         normalized[index * params.sampwidth] &= mask
-    for index in _indices(spec, start, _units(packet_size + TAG_BYTES, spec.bits_per_unit)):
+    for index in derive_payload_positions(key, spec, nonce, _units(packet_size + TAG_BYTES, spec.bits_per_unit)):
         normalized[index * params.sampwidth] &= mask
     return hashlib.sha256(spec.context() + b'\x00' + normalized).digest()
 
@@ -89,7 +89,7 @@ def embed(wav_bytes, message, private_key, bits=1, *, key, media_id='AUDIO001', 
     if required_units(size, spec) > spec.total_units:
         raise ValueError(f'Capacity exceeded: signed payload needs {size} bytes; audio holds {available} bytes after framing.')
     start, header = select_start_location(key, spec, size)
-    payload['hash'] = _audio_hash(params, frames, spec, start, size).hex()
+    payload['hash'] = _audio_hash(params, frames, spec, key, header[4:20], size).hex()
     packet = _packet(payload, sign_payload(private_key, payload))
     samples = embed_units(_samples(params, frames), packet, key, spec,
                           prepared_header=header, demo_log=demo_log)
@@ -110,15 +110,15 @@ def extract(wav_bytes, public_key, bits=1, *, key, start=None, demo_log=None):
         if demo_log:
             demo_log(f'UPLOAD RECOVERY FAILED | {exc}')
         return {'authentic': False, 'verdict': verdict.value}
-    recovered, length = recover_start_location(
-        key, spec, _read(samples, HEADER_BYTES, spec, 0, bootstrap=True))
+    header = _read(samples, HEADER_BYTES, spec, 0, bootstrap=True)
+    recovered, length = recover_start_location(key, spec, header)
     try:
         envelope = json.loads(packet)
         payload = envelope['payload']
         signature = base64.b64decode(envelope['signature'], validate=True)
         if not isinstance(payload, dict) or not verify_payload(public_key, payload, signature):
             return {'authentic': False, 'verdict': Verdict.SIGNATURE_INVALID.value}
-        expected = _audio_hash(params, frames, spec, recovered, length).hex()
+        expected = _audio_hash(params, frames, spec, key, header[4:20], length).hex()
         valid = payload['hash'] == expected and payload['metadata']['bits'] == bits
         return {'authentic': valid,
                 'verdict': Verdict.AUTHENTIC.value if valid else Verdict.TAMPERED.value,

@@ -121,14 +121,15 @@ and integrates against.
 The payload is never embedded at a fixed position such as the top-left pixel.
 Instead, at a high level:
 
-- A shared secret key (`STEGO_SECRET_KEY`) is used to derive a starting position,
-  combined with a random nonce generated fresh at each embed.
+- A shared secret key (`STEGO_SECRET_KEY`) and fresh random nonce derive an
+  ordered sequence of distinct embedding positions using HMAC-SHA256 and a
+  sparse partial shuffle. The first position is the logged start index.
 - A small bootstrap header (magic bytes, nonce, payload length) is written at a
   fixed, well-known offset, itself authenticated so it cannot be forged or
   guessed without the key even though its position is public.
 - The verifier reads this header, checks its authenticity, and only then derives
-  the actual location where the payload and its own authentication tag are
-  hidden.
+  the same scattered positions where the payload and its authentication tag
+  are hidden. Terminal logs show the first ten encoder/decoder positions.
 - Because both the header and the payload region are keyed and authenticated, an
   attacker without the secret key cannot reliably forge a valid frame for the hidden
   data. Location scanning is still possible. Authentication failures are reported as
@@ -227,8 +228,9 @@ from the web app's persistent keys, and reads the start-location secret from .en
 mono/stereo), then calls the shared `app/start_location.py` scheme. A fresh
 nonce and `STEGO_SECRET_KEY` derive the start; the decoder authenticates the
 bootstrap and recovers that start automatically. WAV format settings and
-interleaved sample order are preserved. Audio uses the same header, circular
-payload placement, and HMAC checks as images. Old `ASG1` files must be re-embedded.
+interleaved sample order are preserved. Audio uses the same header, scattered
+payload placement, and HMAC checks as images. The format is now `SL02`; old
+`ASG1` audio and `SL01` image/audio files must be re-embedded from original covers.
 
 Capacity for the signed JSON envelope, including message, metadata and RSA
 signature but excluding start-location framing, is:
@@ -241,7 +243,7 @@ capacity_bytes = max(0, floor((sample_count - header_samples) * bits_per_sample 
 Embedding checks the exact sample count, including padding. It selects one
 nonce/header before computing the signed audio hash, then uses that same
 validated header during embedding. This keeps the hashing and placement aligned.
-The hash normalizes all selected LSBs in the header and wrapped payload/HMAC
+The hash normalizes all selected LSBs in the header and scattered payload/HMAC
 region, including padding. All remaining PCM bits and the audio format settings
 are hashed. RSA-PSS protects that hash and the payload; HMAC protects the frame.
 
