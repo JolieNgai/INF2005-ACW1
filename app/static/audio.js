@@ -47,10 +47,27 @@ byId('embed').onsubmit = event => {
   });
 };
 byId('extract').onsubmit = event => {
-  event.preventDefault(); byId('verdict').textContent = '';
+  event.preventDefault();
+  byId('verification-result').hidden = true;
+  byId('extracted-payload').hidden = true;
+  byId('extracted-message-row').hidden = true;
+  byId('extracted-message').textContent = '';
+  byId('payload-details').textContent = '';
+  const filename = event.target.elements.audio.files[0]?.name || '';
   perform(event.submitter, async () => {
     const result = await post('extract', event.target);
-    byId('verdict').textContent = JSON.stringify(result, null, 2);
+    byId('verified-filename').textContent = filename;
+    byId('verdict').textContent = result.verdict;
+    if (result.payload) {
+      const message = result.payload.metadata?.message;
+      if (typeof message === 'string' && message.length > 0) {
+        byId('extracted-message').textContent = message;
+        byId('extracted-message-row').hidden = false;
+      }
+      byId('payload-details').textContent = JSON.stringify(result.payload, null, 2);
+      byId('extracted-payload').hidden = false;
+    }
+    byId('verification-result').hidden = false;
   });
 };
 byId('tamper').onsubmit = event => {

@@ -179,31 +179,6 @@
         {% endif %}
     </section>
 
-    <section class="card">
-        <h2>Demo Utility: Generate "Payload Missing" Test File</h2>
-        <p class="description">
-            This deliberately embeds non-payload junk bytes (not a real message) into a
-            fresh test image, using the exact same embedding pipeline as a normal embed.
-            The bytes authenticate correctly at the start-location layer, but fail to
-            parse as a valid payload demonstrating the <strong>Payload Missing</strong>
-            verdict. LSBs used when embedding : 1bit.
-        </p>
-        <form action="/generate-payload-missing-test" method="post">
-            <button type="submit">Generate Test File</button>
-        </form>
-
-        {% if payload_missing_test_file %}
-        <p>
-            Generated:
-            <a href="/uploads/{{ payload_missing_test_file }}" download>{{ payload_missing_test_file }}</a>
-        </p>
-        <p class="note">
-            Download this file, then upload it in the Verify section above
-            (LSBs per channel = {{ payload_missing_test_bits }}).
-            Expected verdict: <strong>Payload Missing</strong>.
-        </p>
-        {% endif %}
-    </section>
 
 </div>
 

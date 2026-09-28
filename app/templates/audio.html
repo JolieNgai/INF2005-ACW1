@@ -21,7 +21,9 @@
     <label>Cover WAV <input type="file" name="audio" accept=".wav,audio/wav" required></label>
     <label>LSBs per sample <select name="bits">{% for n in range(1,9) %}<option>{{ n }}</option>{% endfor %}</select></label>
     <p class="note">The start location is derived automatically using the shared secret and a fresh nonce.</p>
-    <label>Message <textarea name="message" required></textarea></label>
+    <label for="audio-message">Message to hide</label>
+    <textarea id="audio-message" name="message" rows="4"
+              placeholder="Enter the verification message to embed..." required></textarea>
     <button type="button" id="capacity">Check capacity</button><button>Embed and sign</button>
   </form>
   <p id="capacity-result" role="status"></p>
@@ -41,7 +43,16 @@
     </details>
     <button>Extract and verify</button>
   </form>
-  <pre id="verdict" role="status"></pre>
+  <div id="verification-result" class="verdict" role="status" hidden>
+    <h3>Verification Result</h3>
+    <p><strong>File checked:</strong> <span id="verified-filename"></span></p>
+    <p><strong>Verdict:</strong> <span id="verdict"></span></p>
+    <div id="extracted-payload" hidden>
+      <h4>Extracted Payload</h4>
+      <p id="extracted-message-row" hidden><strong>Message:</strong> <span id="extracted-message"></span></p>
+      <pre id="payload-details"></pre>
+    </div>
+  </div>
 </section>
 <section class="card">
   <h2>3. Tampered-audio negative case</h2>
