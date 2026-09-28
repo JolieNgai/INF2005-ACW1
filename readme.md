@@ -226,8 +226,8 @@ the hidden packet. With 8-bit PCM, the change may damage the packet instead.
 
 **Generate "Cannot Verify" Test File:** click **Generate Test File** with no upload.
 The app generates a fresh tone, embeds a signed packet, then deliberately damages
-its JSON structure while keeping its header intact. Download the WAV and verify
-with **1 LSB, start sample 100**, leaving the public-key field empty.
+its JSON structure while keeping the SL02 header intact and recomputing the payload HMAC using the server secret. Download the WAV and verify
+with **1 LSB**, leaving the optional start-index and public-key fields empty.
 These are controlled negative tests, not examples of every possible corruption.
 
 ### Generate sample audio
@@ -303,24 +303,20 @@ with the existing image workflow.
 
 ### Audio wrong-start demo
 
-Embed a fresh WAV with **1 LSB, start sample 100**. Extract the downloaded stego
-WAV with **1 LSB, start sample 1**, using the matching trusted public key (or the
-server default when embedded on the same server). Expect **Wrong Start Location**.
-Change the extraction start back to **100** to obtain **Authentic**.
+Embed a fresh WAV with **1 LSB**. Extract with **1 LSB**, the matching trusted
+public key (or the server default), and the optional start field blank. Expect
+**Authentic**. Enter **0** as the expected start index to get **Wrong Start
+Location**: payload positions cannot lie inside the reserved header region.
+Clear the field to recover automatically again.
 
-When the requested position has no valid packet header, audio scans sample LSBs
-at the selected bit depth for another ASG1 packet. It reports Wrong Start Location
-only when that packet's RSA signature verifies and its signed start/LSB metadata
-matches the discovered position. A marker alone is not sufficient evidence.
-This preserves existing audio files and manual start selection; it does not
-implement the shared module's keyed start derivation or claim its innovation.
-
-If no signed packet is confirmed, the result remains **Payload Missing**. A wrong
-key, wrong LSB depth, or malformed payload can prevent confirmation. In particular,
-the deliberately malformed `cannot_verify.wav` still returns **Cannot Verify** at
-100 and **Payload Missing** at 1. Search is limited to 64 marker candidates and a
-cumulative packet-byte budget equal to the PCM byte length; an inconclusive search
-also returns Payload Missing. Out-of-range start values remain input errors.
+Audio now exclusively uses the shared SL02 scattered-position implementation.
+Wrong LSB settings are diagnosed by an authenticated header at another depth;
+no sequential ASG1 scanning or manual placement is used. Older formats must be
+re-embedded from original covers. Missing/unrecognizable headers produce
+**Payload Missing**. Malformed JSON inside an authenticated frame produces
+**Cannot Verify**. The controlled generator uses the server secret to recompute
+HMAC after modifying JSON so it demonstrates that parsing failure; arbitrary
+payload corruption without a valid HMAC instead fails location authentication.
 
 ## Known Limitations
 

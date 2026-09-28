@@ -14,11 +14,6 @@ from .audio_stego import embed, extract, tamper
 from .crypto_payload import generate_keypair
 
 
-def main():
-    load_dotenv()
-    key = os.environ['STEGO_SECRET_KEY']
-    directory = Path('examples/audio')
-    directory.mkdir(parents=True, exist_ok=True)
 def demo_cover():
     output = io.BytesIO()
     with wave.open(output, 'wb') as wav:
@@ -31,6 +26,8 @@ def demo_cover():
 
 
 def main():
+    load_dotenv()
+    key = os.environ['STEGO_SECRET_KEY']
     directory = Path('examples/audio')
     directory.mkdir(parents=True, exist_ok=True)
     cover = demo_cover()
