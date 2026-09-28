@@ -32,9 +32,11 @@ def process(action):
         demo_log = None
         if current_app.config.get('START_LOCATION_DEMO', True):
             demo_log = lambda message: print(f'[START LOCATION] {message}', flush=True)
-        start = int(request.form.get('start', '0'))
         if action == 'corrupt-payload':
-            damaged = audio_stego.corrupt_payload(data, bits, start)
+            raw_start = request.form.get('start', '').strip()
+            start = int(raw_start) if raw_start else None
+            damaged = audio_stego.corrupt_payload(data, bits,
+                        key=main_routes.SECRET_KEY_PHRASE, start=start)
             return send_file(io.BytesIO(damaged), mimetype='audio/wav',
                              as_attachment=True, download_name='cannot_verify.wav')
         if action == 'capacity':
@@ -74,8 +76,8 @@ def process(action):
 def generate_cannot_verify_test():
     from .audio_demo import demo_cover
     stego, _ = audio_stego.embed(demo_cover(), 'Cannot Verify demonstration',
-                                main_routes.PRIVATE_KEY, bits=1, start=100)
-    damaged = audio_stego.corrupt_payload(stego, bits=1, start=100)
+                                main_routes.PRIVATE_KEY, bits=1, key=main_routes.SECRET_KEY_PHRASE)
+    damaged = audio_stego.corrupt_payload(stego, bits=1, key=main_routes.SECRET_KEY_PHRASE)
     return send_file(io.BytesIO(damaged), mimetype='audio/wav',
                      as_attachment=True, download_name='cannot_verify.wav')
 
