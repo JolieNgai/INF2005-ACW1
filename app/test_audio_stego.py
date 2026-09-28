@@ -5,7 +5,7 @@ import wave
 import pytest
 
 from app import create_app
-from app.audio_stego import capacity, embed, extract, read_wav, tamper, write_wav
+from app.audio_stego import capacity, check_payload_capacity, embed, extract, read_wav, tamper, write_wav
 from app.crypto_payload import generate_keypair
 
 
@@ -83,6 +83,21 @@ def test_capacity_and_invalid_input(keys):
             capacity(data)
     with pytest.raises(ValueError, match='Capacity exceeded'):
         embed(cover(), 'x' * 20000, keys[0])
+
+
+@pytest.mark.parametrize('message', ['hello', '你好 🎵 "quoted"\nmessage'])
+def test_capacity_preview_matches_embedding(keys, message):
+    original = cover()
+    preview = check_payload_capacity(original, message, keys[1], 8, 0, 'demo.wav')
+    _, actual = embed(original, message, keys[0], 8, 0, 'demo.wav')
+    assert preview['required_bytes'] == actual['required_bytes']
+    assert preview['required_bits'] == actual['required_bytes'] * 8
+    exact = cover(samples=preview['required_bytes'])
+    assert check_payload_capacity(exact, message, keys[1], 8, 0, 'demo.wav')['fits']
+    small = cover(samples=preview['required_bytes'] - 1)
+    overflow = check_payload_capacity(small, message, keys[1], 8, 0, 'demo.wav')
+    assert not overflow['fits']
+    assert overflow['required_bits'] - overflow['capacity_bits'] == 8
 
 
 def test_exact_capacity(keys):

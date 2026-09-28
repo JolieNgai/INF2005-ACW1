@@ -35,7 +35,9 @@ def process(action):
             return send_file(io.BytesIO(damaged), mimetype='audio/wav',
                              as_attachment=True, download_name='cannot_verify.wav')
         if action == 'capacity':
-            return jsonify(capacity_bytes=audio_stego.capacity(data, bits, start))
+            return jsonify(audio_stego.check_payload_capacity(
+                data, request.form.get('message', ''), main_routes.PUBLIC_KEY,
+                bits, start, media_id=upload.filename))
         if action == 'embed':
             stego, info = audio_stego.embed(
                 data, request.form.get('message', ''), main_routes.PRIVATE_KEY,

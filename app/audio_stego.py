@@ -69,13 +69,25 @@ def _audio_hash(params, frames, bits, start, packet_size):
     return hashlib.sha256(description + normalized).digest()
 
 
+def _prepare_payload(message, key, bits, start, media_id):
+    payload = build_payload(media_id, bytes(32),
+                            {'message': message, 'bits': bits, 'start': start})
+    return payload, len(_packet(payload, bytes(key.key_size // 8)))
+
+
+def check_payload_capacity(wav_bytes, message, key, bits=1, start=0, media_id='AUDIO001'):
+    available = capacity(wav_bytes, bits, start)
+    _, required = _prepare_payload(message, key, bits, start, media_id)
+    return {'capacity_bytes': available, 'required_bytes': required,
+            'capacity_bits': available * 8, 'required_bits': required * 8,
+            'fits': required <= available}
+
+
 def embed(wav_bytes, message, private_key, bits=1, start=0, media_id='AUDIO001'):
     params, frames = read_wav(wav_bytes)
     available = _capacity(params, bits, start)
-    payload = build_payload(media_id, bytes(32),
-                            {'message': message, 'bits': bits, 'start': start})
     # RSA signatures and the hexadecimal hash have fixed sizes.
-    size = len(_packet(payload, bytes(private_key.key_size // 8)))
+    payload, size = _prepare_payload(message, private_key, bits, start, media_id)
     if size > available:
         raise ValueError(f'Capacity exceeded: packet needs {size} bytes; audio holds {available} bytes.')
     payload['hash'] = _audio_hash(params, frames, bits, start, size).hex()

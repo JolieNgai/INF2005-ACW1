@@ -9,6 +9,10 @@
     font: inherit;
 }
 .audio-page textarea { min-height: 90px; }
+.audio-page #cover-capacity-result,
+.audio-page #embed-capacity-result {
+    color: #1d4ed8;
+}
 .audio-page audio { width: 100%; }
 .audio-page .public-key-controls {
     display: flex;
