@@ -32,6 +32,11 @@ def process(action):
         demo_log = None
         if current_app.config.get('START_LOCATION_DEMO', True):
             demo_log = lambda message: print(f'[START LOCATION] {message}', flush=True)
+        start = int(request.form.get('start', '0'))
+        if action == 'corrupt-payload':
+            damaged = audio_stego.corrupt_payload(data, bits, start)
+            return send_file(io.BytesIO(damaged), mimetype='audio/wav',
+                             as_attachment=True, download_name='cannot_verify.wav')
         if action == 'capacity':
             return jsonify(capacity_bytes=audio_stego.capacity(data, bits))
         if action == 'embed':
@@ -63,3 +68,23 @@ def process(action):
         return jsonify(error='Unsupported public key. Use an RSA PEM public key.'), 400
     except (ValueError, TypeError) as exc:
         return jsonify(error=str(exc)), 400
+
+
+@bp.post('/generate-cannot-verify-test')
+def generate_cannot_verify_test():
+    from .audio_demo import demo_cover
+    stego, _ = audio_stego.embed(demo_cover(), 'Cannot Verify demonstration',
+                                main_routes.PRIVATE_KEY, bits=1, start=100)
+    damaged = audio_stego.corrupt_payload(stego, bits=1, start=100)
+    return send_file(io.BytesIO(damaged), mimetype='audio/wav',
+                     as_attachment=True, download_name='cannot_verify.wav')
+
+
+@bp.post('/generate-wrong-public-key')
+def generate_wrong_public_key():
+    # Temporary independent pair: never replace or save the server's keys.
+    temporary_private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = temporary_private.public_key().public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    return send_file(io.BytesIO(pem), mimetype='application/x-pem-file',
+                     as_attachment=True, download_name='wrong-public-key.pem')
