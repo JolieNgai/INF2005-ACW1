@@ -128,6 +128,20 @@ INF2005-ACW1/
 
 ## Dependencies
 
+Installed automatically inside the Docker image; no manual installation needed
+if using docker compose up -d. See requirements.txt for exact versions.
+
+Key packages:
+- Flask — web framework and routing
+- gunicorn — WSGI server used in the Docker container
+- cryptography — RSA key generation, signing, and verification
+- Pillow — PNG image reading and writing
+- python-dotenv — loads STEGO_SECRET_KEY from .env
+- pytest — test suite
+
+After changing requirements.txt, rebuild once with docker compose up -d --build;
+normal startup remains docker compose up -d.
+
 ## Variable start-location module
 
 `app/start_location.py` owns the shared keyed start-location scheme for images
@@ -247,7 +261,7 @@ specifically produces as a result of that integration.
   example wrong key, wrong bit depth, or a stego file whose LSBs were altered
   after embedding.
 - **Cannot Verify**: the uploaded file is not a valid or readable image at all, for
-  example a non-PNG file renamed with a `.png` extension.
+  example a corrupted or non-image file.
 
 ### Image demo utilities
 
@@ -467,7 +481,7 @@ re-embedded from original covers. Missing/unrecognizable headers produce
 HMAC after modifying JSON so it demonstrates that parsing failure; arbitrary
 payload corruption without a valid HMAC instead fails location authentication.
 
-## Known Limitations
+## Known Limitations (Audio)
 
 - Audio recovery requires the same start-location secret and LSB setting. The secret must be strong and shared securely; a public RSA key alone is insufficient.
 - Steganography hides the message; it does **not encrypt** it. Anyone knowing or
@@ -517,15 +531,45 @@ docker compose exec web python -m app.crypto_payload
 - `verdict_from_exception(exc)` maps unexpected exceptions to `Cannot Verify` with
   an explanation, instead of leaking a raw stack trace to the user.
 - An app-level error handler in `__init__.py` catches any unhandled exception from
-  any blueprint (image, audio, or home) and returns either a styled HTML error page
-  or a JSON error response depending on the request path, so the app stays usable
-  instead of showing a raw traceback.
+  every registered blueprint (home, image, audio, attack simulation) and returns
+  a styled HTML error page for non-audio paths or a JSON error response for
+  `/audio/*` paths, so the app stays usable instead of showing a raw traceback.
+  The handler preserves the original HTTP status code for framework-level errors
+  (for example, a 404 for an unknown URL) rather than always reporting 500.
 - Client-side state management (disabling submit buttons during a request, showing
   a processing state) is implemented for both the image workflow (inline script in
   `image_stego.html`) and the audio workflow (`audio.js`).
-- Shared input validation (`app/validation.py`) is used on the image routes to
-  reject invalid/missing files and out-of-range LSB values before they reach the
-  stego modules.
+- Shared input validation (`app/validation.py`) rejects invalid/missing files and
+  out-of-range LSB values on the image routes before they reach the stego module.
+  Audio performs equivalent checks inline in `audio_stego.py`/`audio_routes.py`
+  rather than sharing this module.
+
+### Input validation and error handling coverage
+
+Beyond the six verdict categories above, the app validates uploads before they
+reach the steganography or crypto modules: wrong file type or extension, corrupted
+or unreadable cover files, payload size exceeding cover capacity, and out-of-range
+LSB selections are all rejected with a clear on-page message rather than a crash
+or raw error. Unhandled exceptions anywhere in the app, including invalid URLs,
+are caught by an app-level error handler (see Orchestration & Error Handling above)
+and shown as a styled `Cannot Verify` result instead of a stack trace.
+
+### Known Limitations (Input validation and error handling)
+
+- PNG file-type checking relies on the `.png` file extension; the system does not
+  verify that the uploaded file is actually PNG-encoded. A genuine JPEG (or other
+  Pillow-readable format) renamed with a `.png` extension is accepted and embeds
+  successfully, since `Image.open()` identifies the format from file content and
+  `.convert("RGB")` succeeds regardless of the original encoding. The output is
+  still saved as a valid PNG, so this does not break the tool's own workflow, but
+  it means the "PNG only" rule is not strictly enforced.
+- Uploading an invalid file as the signer's public key on the audio Verify form
+  surfaces a raw error message from the underlying `cryptography` library,
+  rather than a rewritten, user-friendly message.
+- If a file selected for upload becomes unreadable before the audio form is
+  submitted (for example, renamed after selection), the browser reports a
+  generic network failure. This happens before the request reaches the server,
+  so it is not covered by the app's own validation or error handling.
 
 ## Attack Simulation Module (`app/attack_simulation.py`)
 
