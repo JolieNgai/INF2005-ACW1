@@ -108,11 +108,38 @@ images made with the old format must be embedded again. See
 [start_location_notes.md](start_location_notes.md) for the algorithm, API,
 sole ownership statement, audio integration contract, and security limits.
 
-## Usage
-See `requirements.txt`. Key packages: Flask, gunicorn, cryptography, Pillow,
-python-dotenv, and pytest. Docker installs these when building the app image.
-After dependency changes, rebuild once with `docker compose up -d --build`;
-normal startup remains `docker compose up -d`.
+### Keyed Scattered LSB Embedding / Variable Start Location
+
+The system implements a variable start-location mechanism instead of embedding the payload from a fixed and predictable position.
+
+#### How It Works
+
+During encoding, a fresh 16-byte random nonce is generated.
+The nonce, shared secret key, and carrier information are processed using HMAC-SHA256.
+The resulting keyed pseudo-random values are used with a partial Fisher-Yates shuffle to generate distinct embedding positions.
+The first generated position is treated as the start location.
+The remaining positions are used to scatter the payload across the image or audio carrier instead of storing it consecutively.
+A small authenticated bootstrap header stores the magic marker (`SL02`), nonce, payload length, and authentication tag.
+During decoding, the bootstrap header is recovered and authenticated.
+Using the recovered nonce, the same shared secret and carrier information, the decoder independently regenerates the same start location and scattered position sequence.
+
+#### Security Purpose
+
+Compared with a basic fixed-location LSB implementation, the payload does not always begin at the same predictable location or continue through consecutive carrier positions.
+The shared secret is required to reproduce the keyed position sequence, while the random nonce provides variability between different embeddings.
+HMAC authentication is also used to detect incorrect extraction settings or modification of the embedded data.
+
+#### Start-Location Verification
+
+The implementation supports detection of:
+Payload Missing, no recognizable `SL02` bootstrap header can be found.
+Wrong Start Location / Settings, the expected authenticated payload cannot be recovered using the selected settings or position sequence.
+Successful Recovery, the decoder regenerates the correct positions and the payload authentication succeeds.
+
+#### Limitations
+
+A small bootstrap region is stored at a known location so that the decoder can recover the nonce required for position derivation. Although the actual payload positions are keyed and scattered, the bootstrap location itself is predictable.
+An authentication failure may also be caused by tampering, an incorrect key, incorrect settings, or incorrect positions, so these causes cannot always be distinguished from the HMAC result alone.
 
 ## Image usage
 
