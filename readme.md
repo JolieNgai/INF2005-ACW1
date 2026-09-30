@@ -238,8 +238,8 @@ specifically produces as a result of that integration.
   instead.
 - **Signature Invalid**: payload parses correctly, but its digital signature does
   not match. Not reliably producible by casual editing, since pixel tampering
-  after embed typically breaks the start-location HMAC first. See Demo utilities
-  below.
+  after embed typically breaks the start-location HMAC first. Reachable by
+  verifying with the wrong public key, or via the Demo utility below.
 - **Payload Missing**: no recognizable embedded header exists at any bit depth.
   Reproducible directly: upload any plain PNG that was never embedded through
   this app, at any bit depth.
