@@ -127,12 +127,15 @@ Open http://localhost:8080/image, or select **Image Steganography** on the home 
 5. Embed: payload (media ID, timestamp, hash, nonce, message) is built, signed
    with the app's private key, then hidden in the image starting at a key-derived
    start location.
-6. Download the resulting stego image. Cover and stego are shown side by side for
-   visual comparison.
+6. Download the resulting stego image and the app's public key. Cover and stego
+   are shown side by side for visual comparison. The public key is not secret,
+   and only needs to reach the verifier so they can confirm the signature.
 7. Extract and verify: upload a stego image, either the same file or one received
-   from someone else, with the matching bit depth. The system re-derives the start
-   location, extracts the payload and signature, and returns a verdict. The
-   filename checked is shown alongside the result.
+   from someone else, with the matching bit depth. Optionally upload the signer's
+   public key (`.pem`), for a real cross-machine check where the verifier isn't
+   using the same server's own key. The system re-derives the start location,
+   extracts the payload and signature, and returns a verdict. The filename
+   checked and which public key was used are both shown alongside the result.
 
 ### Start-location integration (FR7)
 
@@ -160,49 +163,53 @@ Instead, at a high level:
   data. Location scanning is still possible. Authentication failures are reported as
   `Wrong Start Location`, rather than silently succeeding.
 
-The image module (`app/image_stego.py`) calls into this shared scheme for every
-embed and extract; the behaviors below describe what the image workflow
-specifically produces as a result.
+The image module (`app/image_stego.py`) is a thin adapter over this shared
+scheme: it builds the image-specific `CarrierSpec` (width, height, 3 channels,
+selected bit depth) and calls `embed_units`/`extract_units`/`required_units` for
+every embed, capacity check, and extract. It does not implement bit-level LSB
+read/write itself; the behaviors below describe what the image workflow
+specifically produces as a result of that integration.
 
 ### Image verdict categories
 
 - **Authentic**: payload extracted, signature valid, image hash matches. Verify an
   untampered stego image with the correct key and bit depth.
 - **Tampered**: payload and location authenticate, but the image's content hash no
-  longer matches. Edit pixels in a stego image after embedding, then verify.
+  longer matches. Edit pixels in a stego image after embedding, then verify. The
+  edit must change bits above the selected LSB depth; changing an embedded LSB
+  breaks the start-location HMAC first and reports as `Wrong Start Location`
+  instead.
 - **Signature Invalid**: payload parses correctly, but its digital signature does
   not match. Not reliably producible by casual editing, since pixel tampering
   after embed typically breaks the start-location HMAC first. See Demo utilities
   below.
-- **Payload Missing**: extracted bytes authenticate at the start-location layer,
-  but do not parse as a valid payload structure. See Demo utilities below.
-- **Wrong Start Location**: the bootstrap header does not authenticate, for
-  example wrong key, wrong bit depth, or a file that was never embedded.
+- **Payload Missing**: no recognizable embedded header exists at any bit depth.
+  Reproducible directly: upload any plain PNG that was never embedded through
+  this app, at any bit depth.
+- **Wrong Start Location**: the bootstrap or payload authentication fails, for
+  example wrong key, wrong bit depth, or a stego file whose LSBs were altered
+  after embedding.
 - **Cannot Verify**: the uploaded file is not a valid or readable image at all, for
   example a non-PNG file renamed with a `.png` extension.
 
 ### Image demo utilities
 
 Because the start-location scheme is cryptographically authenticated rather than
-a plain fixed offset, two of the six verdicts, Payload Missing and Signature
-Invalid, cannot be reliably produced by casual editing of a real stego image. Any
-pixel-level tampering tends to break the start-location HMAC first, which reports
-as Wrong Start Location instead. To still demonstrate these two verdicts, the
-Image page includes two one-click test utilities:
+a plain fixed offset, one of the six verdicts, **Signature Invalid**, cannot be
+reliably produced by casual editing of a real stego image: any pixel-level
+tampering tends to break the start-location HMAC first, which reports as
+`Wrong Start Location` instead. To still demonstrate it, the Image page includes
+a one-click test utility:
 
-- **Generate "Payload Missing" Test File**: embeds deliberately non-JSON junk
-  bytes through the real embedding pipeline. The bytes authenticate correctly at
-  the start-location layer, proving the embed and extract mechanism itself works,
-  but fail to parse as a valid payload structure.
 - **Generate "Signature Invalid" Test File**: builds and signs a real payload
   normally, then flips one byte of the resulting signature before embedding. The
   payload is well-formed JSON and authenticates at the start-location layer, but
   the signature itself no longer matches.
 
-Both utilities produce a normal PNG file that is then verified through the same
-Verify flow as any other upload. No verification logic is bypassed or shortcut;
-only the input to a normal embed is deliberately malformed, in a way that
-isolates one verification layer at a time.
+This utility produces a normal PNG file that is then verified through the same
+Verify flow as any other upload. No verification logic is bypassed or
+shortcut; only the input to a normal embed is deliberately malformed, in a way
+that isolates the signature layer specifically.
 
 
 ## Audio usage and demo
