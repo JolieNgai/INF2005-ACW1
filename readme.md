@@ -2,7 +2,7 @@
 
 **Team:** P6-7
 
-## Overview
+## Project Overview
 
 Flask web app that embeds signed verification payloads into PNG images and integer
 PCM WAV audio using LSB replacement steganography. It extracts the hidden payload,
@@ -10,6 +10,17 @@ checks its RSA signature, and verifies the relevant media hash to detect tamperi
 
 The home page links to **Image Steganography** at `/image` and **Audio Steganography**
 at `/audio`. Both workflows use the persistent RSA keys in `app/keys/`.
+
+- **Image Steganography:** embeds a signed message in PNG colour-channel LSBs,
+  with cover/stego previews and verification of the signature and image hash.
+- **Audio Steganography:** embeds a signed message in the LSBs of uncompressed
+  integer PCM WAV samples (8-, 16-, 24-, or 32-bit). It provides capacity checks,
+  cover/stego playback, and verification of the signature and audio hash.
+
+Both features use 1-8 LSBs and the shared authenticated `SL02` placement scheme.
+The shared secret and a fresh nonce determine scattered payload positions;
+verification recovers these positions automatically before checking the signed
+payload. Messages are hidden but are not encrypted.
 
 ## Requirements
 
@@ -298,7 +309,7 @@ that isolates the signature layer specifically.
   reports it as the same generic `Wrong Start Location` verdict), but the
   underlying detection already exists.
 
-## Audio usage and demo
+## Audio usage
 
 Open http://localhost:8080/audio, or select **Audio Steganography** on the home page.
 
@@ -338,58 +349,7 @@ verification passed. Check the `authentic` flag and verdict. Keep each stego fil
 with its matching public key, and capture both positive and negative results for
 demo evidence.
 
-### Audio demo utilities
-
-**Generate Wrong Public Key:** click the button and download
-`wrong-public-key.pem`. Verify a valid stego WAV with its correct original LSB
-count and the optional start index blank, but select this downloaded key as
-**Signer's Public Key** to get **Signature Invalid**.
-Click **Remove public key** afterwards to use the server default, or upload the
-matching trusted key. Each click generates an independent RSA key pair in memory;
-only its public key is downloaded. The temporary private key is not saved or
-returned, and the server's signing keys are unchanged.
-**Generate "Tampered" Test File:** upload a valid stego WAV and click
-**Generate Test File**. Verify the download with the original settings and matching
-key. Use 16-, 24-, or 32-bit PCM for this demo: the changed high bit lies outside
-the hidden packet. With 8-bit PCM, the change may damage the packet instead.
-
-**Generate "Cannot Verify" Test File:** click **Generate Test File** with no upload.
-The app generates a fresh tone, embeds a signed packet, then deliberately damages
-its JSON structure while keeping the SL02 header intact and recomputing the
-payload HMAC using the server secret. Download `cannot_verify.wav` and verify
-with **1 LSB**, leaving the optional start-index and public-key fields empty.
-These are controlled negative tests, not examples of every possible corruption.
-
-### Audio verdict categories
-
-| Verdict | Meaning / demonstration |
-| --- | --- |
-| **Authentic** | The frame authenticates, the RSA signature verifies, and the audio hash matches. Verify an unchanged stego WAV with matching settings and keys. |
-| **Tampered** | The signature verifies, but the audio hash does not match. Use the tampered-file utility with 16-, 24-, or 32-bit PCM. |
-| **Signature Invalid** | The extracted payload fails RSA signature verification. Use the generated wrong public key with a valid stego WAV. |
-| **Payload Missing** | No recognizable embedded frame is found. Try an unembedded cover WAV; a damaged format marker can also cause this verdict. |
-| **Wrong Start Location** | Frame authentication or the optional start-index check fails. Try an expected start index of `0`, a wrong LSB setting, or a wrong start-location secret. |
-| **Cannot Verify** | The authenticated packet cannot be parsed or processed. Use the controlled Cannot Verify test file. |
-
-Invalid WAV uploads, unsupported public keys, and invalid form values are shown
-as request errors on the page. A verdict identifies the failed verification
-stage, not necessarily a unique cause of damage.
-
-### Generate sample audio
-
-With the Docker stack running:
-
-```powershell
-docker compose exec web python -m app.audio_demo
-```
-
-This generates a three-second tone and writes `cover.wav`, `stego.wav`,
-`tampered.wav`, `public-key.pem`, and `verification.json` to `examples/audio/`.
-Use **1 LSB** with automatic start recovery, and explicitly upload that folder's public key
-when verifying the generated examples. The demo uses its own key pair, separate
-from the web app's persistent keys, and reads the start-location secret from .env. Rerunning it replaces the generated files.
-
-### How audio embedding and verification work
+### Start-location integration (FR7)
 
 `app/audio_stego.py` decodes integer PCM WAV samples (8/16/24/32-bit,
 mono/stereo), then calls the shared `app/start_location.py` scheme. A fresh
@@ -398,6 +358,8 @@ bootstrap and recovers that start automatically. WAV format settings and
 interleaved sample order are preserved. Audio uses the same header, scattered
 payload placement, and HMAC checks as images. The format is now `SL02`; old
 `ASG1` audio and `SL01` image/audio files must be re-embedded from original covers.
+
+#### How It Works
 
 Capacity for the signed JSON envelope, including message, metadata and RSA
 signature but excluding start-location framing, is:
@@ -427,6 +389,87 @@ Location**, or an unembedded WAV to get **Payload Missing**. A damaged format
 marker may also be classified as missing; these are detection verdicts, not
 proof of a unique cause. Demo logging can be disabled with Flask configuration
 `START_LOCATION_DEMO=False`.
+
+### Audio verdict categories
+
+- **Authentic**: The frame authenticates, the RSA signature verifies, and the audio hash matches. Verify an unchanged stego WAV with matching settings and keys.
+- **Tampered**: The signature verifies, but the audio hash does not match. Use the tampered-file utility with 16-, 24-, or 32-bit PCM.
+- **Signature Invalid**: The extracted payload fails RSA signature verification. Use the generated wrong public key with a valid stego WAV.
+- **Payload Missing**: No recognizable embedded frame is found. Try an unembedded cover WAV; a damaged format marker can also cause this verdict.
+- **Wrong Start Location**: Frame authentication or the optional start-index check fails. Try an expected start index of `0`, a wrong LSB setting, or a wrong start-location secret.
+- **Cannot Verify**: The authenticated packet cannot be parsed or processed. Use the controlled Cannot Verify test file.
+
+Invalid WAV uploads, unsupported public keys, and invalid form values are shown
+as request errors on the page. A verdict identifies the failed verification
+stage, not necessarily a unique cause of damage.
+
+### Audio demo utilities
+
+**Generate Wrong Public Key:** click the button and download
+`wrong-public-key.pem`. Verify a valid stego WAV with its correct original LSB
+count and the optional start index blank, but select this downloaded key as
+**Signer's Public Key** to get **Signature Invalid**.
+Click **Remove public key** afterwards to use the server default, or upload the
+matching trusted key. Each click generates an independent RSA key pair in memory;
+only its public key is downloaded. The temporary private key is not saved or
+returned, and the server's signing keys are unchanged.
+**Generate "Tampered" Test File:** upload a valid stego WAV and click
+**Generate Test File**. Verify the download with the original settings and matching
+key. Use 16-, 24-, or 32-bit PCM for this demo: the changed high bit lies outside
+the hidden packet. With 8-bit PCM, the change may damage the packet instead.
+
+**Generate "Cannot Verify" Test File:** click **Generate Test File** with no upload.
+The app generates a fresh tone, embeds a signed packet, then deliberately damages
+its JSON structure while keeping the SL02 header intact and recomputing the
+payload HMAC using the server secret. Download `cannot_verify.wav` and verify
+with **1 LSB**, leaving the optional start-index and public-key fields empty.
+These are controlled negative tests, not examples of every possible corruption.
+
+#### Generate sample audio
+
+With the Docker stack running:
+
+```powershell
+docker compose exec web python -m app.audio_demo
+```
+
+This generates a three-second tone and writes `cover.wav`, `stego.wav`,
+`tampered.wav`, `public-key.pem`, and `verification.json` to `examples/audio/`.
+Use **1 LSB** with automatic start recovery, and explicitly upload that folder's public key
+when verifying the generated examples. The demo uses its own key pair, separate
+from the web app's persistent keys, and reads the start-location secret from .env. Rerunning it replaces the generated files.
+
+### Known limitations (Audio)
+
+- Audio recovery requires the same start-location secret and LSB setting. The secret must be strong and shared securely; a public RSA key alone is insufficient.
+- Steganography hides the message; it does **not encrypt** it. Anyone with the shared start-location secret and matching
+  settings can extract and read it. Keep private keys secret and distribute
+  public keys through a trusted channel.
+- Audio sample changes are bounded by `2**bits - 1`. Audibility depends on the
+  recording and sample width; eight LSBs on 8-bit audio can substantially degrade
+  it. Automated tests do not replace a listening comparison.
+- Audio requires uncompressed integer PCM WAV. Floating-point or compressed WAVs
+  are rejected. Lossy conversion, resampling, or editing generally breaks
+  verification. Browser playback support varies; use 16-bit PCM for the demo.
+- Original overwritten audio bits cannot be reconstructed. Non-audio RIFF
+  metadata is not authenticated, and ancillary chunks are not retained when
+  writing WAVs.
+- Requests are limited to 20 MiB, matching nginx. Audio files are processed in
+  memory and are not retained by the audio endpoints.
+
+- **Embedded-bit damage may report `Wrong Start Location`.** Changes to the
+  authenticated header or payload region can fail HMAC checks before the audio
+  hash is compared. `Tampered` requires a recoverable packet with a valid signature.
+- **Signature Invalid has two indistinguishable causes.** A damaged signature
+  and verification with the wrong public key produce the same verdict.
+
+### Notable strength (Audio)
+
+- **The audio hash accounts precisely for embedding changes.** Only the selected
+  LSBs at the header and scattered payload/tag positions are normalized, including
+  padding. All other PCM bits, including unused LSBs, and the audio format settings
+  remain covered by the hash. This allows an unchanged stego WAV to verify while
+  detecting changes outside the embedding region.
 
 ## Tests
 
@@ -466,24 +509,6 @@ re-embedded from original covers. Missing/unrecognizable headers produce
 **Cannot Verify**. The controlled generator uses the server secret to recompute
 HMAC after modifying JSON so it demonstrates that parsing failure; arbitrary
 payload corruption without a valid HMAC instead fails location authentication.
-
-## Known Limitations
-
-- Audio recovery requires the same start-location secret and LSB setting. The secret must be strong and shared securely; a public RSA key alone is insufficient.
-- Steganography hides the message; it does **not encrypt** it. Anyone knowing or
-  guessing the settings can read it. Keep private keys secret and distribute
-  public keys through a trusted channel.
-- Audio sample changes are bounded by `2**bits - 1`. Audibility depends on the
-  recording and sample width; eight LSBs on 8-bit audio can substantially degrade
-  it. Automated tests do not replace a listening comparison.
-- Audio requires uncompressed integer PCM WAV. Floating-point or compressed WAVs
-  are rejected. Lossy conversion, resampling, or editing generally breaks
-  verification. Browser playback support varies; use 16-bit PCM for the demo.
-- Original overwritten audio bits cannot be reconstructed. Non-audio RIFF
-  metadata is not authenticated, and ancillary chunks are not retained when
-  writing WAVs.
-- Requests are limited to 20 MiB, matching nginx. Audio files are processed in
-  memory and are not retained by the audio endpoints.
 
 ## Crypto/Payload Module (app/crypto_payload.py)
 
