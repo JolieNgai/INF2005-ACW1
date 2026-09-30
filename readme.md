@@ -79,6 +79,7 @@ INF2005-ACW1/
 |   |-- cover.wav
 |   |-- stego.wav
 |   |-- tampered.wav
+|   |-- cannot_verify.wav
 |   |-- public-key.pem
 |   `-- verification.json
 |-- evidence/                 # Generated attack simulation reports
