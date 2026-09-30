@@ -39,6 +39,35 @@ at `/audio`. Both workflows use the persistent RSA keys in `app/keys/`.
    ```
    http://localhost:8080
    ```
+## Keys
+
+The app uses one RSA-2048 key pair to sign every payload it embeds, for both
+image and audio. On first startup, `app/routes.py`'s `load_or_create_keys()`
+checks `app/keys/private_key.pem` and `app/keys/public_key.pem`. If either is
+missing, it generates a fresh key pair and writes both files. On every later
+startup, the existing keys are loaded instead, so the same key pair persists
+across restarts as long as `app/keys/` is not deleted.
+
+- **Private key** (`app/keys/private_key.pem`): stays on the server, used only
+  to sign payloads. It must never be committed to version control or sent to
+  anyone. Confirm `app/keys/` is listed in `.gitignore` before pushing.
+- **Public key** (`app/keys/public_key.pem`): safe to share openly. It is
+  needed only to confirm a signature, not to keep secret. Download it from the
+  running app at `/public-key`, or from the **Download My Public Key** link
+  shown after an embed.
+
+For a genuine cross-machine verification, the verifier needs the signer's
+public key, not their own instance's key. On the Verify form, uploading a
+`.pem` file under **Signer's Public Key** checks the signature against that
+specific key instead of the local instance's default. Leaving it blank falls
+back to the local instance's own key, which is only meaningful for
+same-machine testing, since two different instances generate two different,
+unrelated key pairs on first startup.
+
+This is separate from `STEGO_SECRET_KEY` in `.env`, which is a shared secret
+used to derive embedding positions, not a cryptographic key pair. Both
+instances that need to embed or verify the same file must be configured with
+the same `STEGO_SECRET_KEY`, shared out of band and never committed.
 
 ## Project Structure
 
