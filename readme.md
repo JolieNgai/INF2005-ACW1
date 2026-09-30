@@ -212,6 +212,27 @@ Verify flow as any other upload. No verification logic is bypassed or
 shortcut; only the input to a normal embed is deliberately malformed, in a way
 that isolates the signature layer specifically.
 
+### Known limitations (Image)
+
+- **Tampering below the visible bit-depth is not caught.** `Tampered` only
+  fires when a pixel edit lands in a bit above the selected LSB depth. An edit
+  confined to the embedded LSBs themselves is instead caught earlier, as
+  `Wrong Start Location`, since it breaks the payload's own authentication tag
+  before the image-hash comparison ever runs.
+- **The hidden message is not confidential.** The payload's `message` field is
+  stored as plaintext JSON once extracted. The signature and HMAC protect its
+  *integrity and authenticity*, proving who signed it and that it hasn't
+  changed, but not its *secrecy*. Anyone who extracts the payload using only
+  the shared `STEGO_SECRET_KEY` can read the message.
+- **Signature Invalid has two indistinguishable causes.** A corrupted
+  signature and verification against the wrong public key both surface
+  identically as `Signature Invalid`; the system cannot tell these apart.
+- **RSA-2048 signatures add significant fixed overhead** (roughly 800+ bytes
+  per embed once hex-encoded and framed), which matters for small cover
+  images: a 20x20 PNG cannot hold a full payload even at 8 bits per channel.
+- **Higher bit depths degrade image quality visibly.** At 6-8 bits per
+  channel, LSB replacement begins to alter more-significant bits and can
+  become perceptible to the naked eye, trading capacity for imperceptibility.
 
 ## Audio usage and demo
 
