@@ -19,7 +19,7 @@ at `/audio`. Both workflows use the persistent RSA keys in `app/keys/`.
 
 1. Clone the repository:
    ```
-   git clone <repo-url>
+   git clone https://github.com/JolieNgai/INF2005-ACW1.git
    cd INF2005-ACW1
    ```
 
