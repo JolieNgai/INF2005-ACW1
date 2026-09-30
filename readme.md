@@ -214,25 +214,33 @@ that isolates the signature layer specifically.
 
 ### Known limitations (Image)
 
-- **Tampering below the visible bit-depth is not caught.** `Tampered` only
-  fires when a pixel edit lands in a bit above the selected LSB depth. An edit
-  confined to the embedded LSBs themselves is instead caught earlier, as
-  `Wrong Start Location`, since it breaks the payload's own authentication tag
-  before the image-hash comparison ever runs.
 - **The hidden message is not confidential.** The payload's `message` field is
-  stored as plaintext JSON once extracted. The signature and HMAC protect its
-  *integrity and authenticity*, proving who signed it and that it hasn't
-  changed, but not its *secrecy*. Anyone who extracts the payload using only
-  the shared `STEGO_SECRET_KEY` can read the message.
-- **Signature Invalid has two indistinguishable causes.** A corrupted
-  signature and verification against the wrong public key both surface
-  identically as `Signature Invalid`; the system cannot tell these apart.
-- **RSA-2048 signatures add significant fixed overhead** (roughly 800+ bytes
-  per embed once hex-encoded and framed), which matters for small cover
-  images: a 20x20 PNG cannot hold a full payload even at 8 bits per channel.
-- **Higher bit depths degrade image quality visibly.** At 6-8 bits per
-  channel, LSB replacement begins to alter more-significant bits and can
-  become perceptible to the naked eye, trading capacity for imperceptibility.
+  plain JSON once extracted (`crypto_payload._serialize`). The signature and
+  HMAC protect its integrity and authenticity, but not its secrecy: anyone
+  who extracts the payload with only the shared `STEGO_SECRET_KEY` can read it.
+- **Signature Invalid has two indistinguishable causes.** A corrupted signature
+  and verification against the wrong public key both surface identically as
+  `Signature Invalid`.
+- **A tamper to any embedded LSB is caught as `Wrong Start Location`, not
+  `Tampered`.** Payload bytes are scattered across keyed positions
+  (`derive_payload_positions`) and covered by their own HMAC tag. Any change
+  to one of those positions fails that tag before the image hash comparison
+  ever runs. `Tampered` is only reachable via edits to pixels the payload
+  never occupies, or to bits above the selected depth.
+- **RSA-2048 signatures add substantial fixed overhead:** a 60-byte
+  authenticated header, a 32-byte payload tag, and a 256-byte signature (512
+  hex characters once encoded), before any message content is counted. Small
+  cover images may not hold a payload even at high bit depths.
+
+### Notable strength (Image)
+
+- **Bit-depth mismatches are actively investigated internally, not just
+  rejected.** If verification is attempted at the wrong LSB depth,
+  `extract_units` probes every other depth and, if it finds an authenticated
+  header elsewhere, raises an error identifying which depth was actually
+  used. This detail is not currently surfaced to the user (`run_verification`
+  reports it as the same generic `Wrong Start Location` verdict), but the
+  underlying detection already exists.
 
 ## Audio usage and demo
 
